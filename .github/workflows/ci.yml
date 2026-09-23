@@ -56,6 +56,10 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - uses: actions/cache@v4
+        with:
+          path: apps/api/.models
+          key: ${{ runner.os }}-hf-Xenova-paraphrase-multilingual-MiniLM-L12-v2
       # Mirrors docker/postgres/init.sql: the suite migrates ecolheita_test but never
       # creates it.
       - name: Create ecolheita_test
@@ -132,6 +136,10 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - uses: actions/cache@v4
+        with:
+          path: apps/api/.models
+          key: ${{ runner.os }}-hf-Xenova-paraphrase-multilingual-MiniLM-L12-v2
       - name: Playwright version
         id: playwright
         run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"

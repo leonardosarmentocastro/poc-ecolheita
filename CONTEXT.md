@@ -21,6 +21,24 @@ that contradicts them is a bug. Workflow conventions live in the `AGENTS.md` fil
   match for "banana"; "bolo de banana" is the known hard case, a different product the
   search may still return.
 
+## Search
+
+- **Embedded text** — the product's **normalised name only** (trimmed, lowercased,
+  whitespace collapsed). Never the shop name; description and category are not inputs.
+- **Similarity** — `1 - cosine_distance` between the query's vector and the product's,
+  in `[-1, 1]`, higher is closer. Model: `Xenova/paraphrase-multilingual-MiniLM-L12-v2`,
+  384 dimensions, run in-process.
+- **Threshold** — `SEARCH_SIMILARITY_THRESHOLD`: a row matches when its similarity is
+  greater than or equal to it. The default was chosen from the banana scenario's
+  similarity table and is a regression guard on that fixture, not evidence the model
+  generalises.
+- **Ranking** — matches are ordered by final price ascending, then similarity descending,
+  then id ascending. Cap 20.
+- **Zero stock** — a product with `quantity = 0` is never a search result; it is still listed
+  on the products page.
+- **A product without a vector never exists** — the repository embeds on every create and on
+  every rename; it is the only write path.
+
 ## Not in the model yet
 
 - Units and pack sizes (issue #2): every price is for the same implicit unit.
