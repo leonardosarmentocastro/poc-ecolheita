@@ -17,15 +17,15 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   globalSetup: "./global-setup.ts",
-  // The web app is served from a production build (AGENTS.md § End-to-end tests), so no test
+  // The web app is served from a production build (see `webServer` below), so no test
   // pays a first-hit route compile and retries no longer paper one over. They stay for a
   // genuinely transient failure: the suite finishes rather than stopping at it, and the
   // retry's trace says "flaky" rather than "broken". `failOnFlakyTests` below keeps the job
   // red regardless.
   retries: process.env.CI ? 2 : 0,
   // A flake is a red job, not a green one. Without this a test that fails and then passes
-  // on a retry is reported "1 flaky" and the process still exits 0 — which is how a failing
-  // test read as a passing check for four days before this slice.
+  // on a retry is reported "1 flaky" and the process still exits 0, so a failing test
+  // would read as a passing check.
   failOnFlakyTests: !!process.env.CI,
   // Both paths are relative to this file, so a failed run leaves its evidence under e2e/
   // — where .gitignore and the CI job's failure upload look for it. (An unset outputDir
@@ -57,8 +57,7 @@ export default defineConfig({
       // rejects an early exit with "Process from config.webServer was not able to start",
       // so the piped build error is what a reader sees.
       timeout: 300_000,
-      // So the build's own timing and errors reach the CI log. The dev server's never did,
-      // which is why the compile cost this slice removes had to be measured on a laptop.
+      // So the build's own timing and errors reach the CI log.
       stdout: "pipe",
       env: { PORT: String(WEB_PORT), NEXT_PUBLIC_API_URL: API_URL },
     },
