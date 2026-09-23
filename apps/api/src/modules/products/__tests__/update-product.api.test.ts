@@ -24,6 +24,8 @@ describe("PATCH /products/:id", () => {
 
   it("updates fields and recomputes finalPrice (200)", async () => {
     const created = await create(base);
+    // A pause, so a bumped updatedAt cannot share the creation's millisecond.
+    await new Promise((resolve) => setTimeout(resolve, 5));
     const res = await patch(base, created.id, { price: 1000, discountPercentage: 25, quantity: 3 });
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -35,7 +37,7 @@ describe("PATCH /products/:id", () => {
       quantity: 3,
       finalPrice: 750,
     });
-    expect(new Date(body.updatedAt).getTime()).toBeGreaterThanOrEqual(
+    expect(new Date(body.updatedAt).getTime()).toBeGreaterThan(
       new Date(created.updatedAt).getTime(),
     );
     expect(body).not.toHaveProperty("embedding");
