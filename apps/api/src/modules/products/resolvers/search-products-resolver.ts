@@ -12,13 +12,11 @@ export const searchProductsResolver = async (
   try {
     const { q } = searchQuerySchema.parse(req.query);
     const queryVector = await embed(normalizeForEmbedding(q));
-    res
-      .status(200)
-      .json(
-        await productsRepository.search(queryVector, {
-          threshold: env.SEARCH_SIMILARITY_THRESHOLD,
-        }),
-      );
+    res.status(200).json(
+      await productsRepository.search(queryVector, {
+        threshold: env.SEARCH_SIMILARITY_THRESHOLD,
+      }),
+    );
   } catch (err) {
     next(err);
   }
