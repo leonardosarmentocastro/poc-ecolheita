@@ -1,7 +1,7 @@
 # Product vector search — design
 
 **Feature key:** `product-vector-search` · **Branch:** `feat/product-vector-search`
-**Reviewed:** round 1 (2026-09-22).
+**Reviewed:** round 1 (2026-09-22) · round 2 (2026-09-22).
 **Deferred follow-ups:** [#2 units and pack sizes](https://github.com/leonardosarmentocastro/poc-ecolheita/issues/2) · [#3 shop and batch grouping](https://github.com/leonardosarmentocastro/poc-ecolheita/issues/3)
 
 ## Goal
@@ -57,9 +57,10 @@ is a different product.
 **Known risk, and what happens if it lands.** Row 7 contains the word "banana" and a
 sentence model may place it close to the query. The assertions are therefore in two tiers:
 
-- **Hard:** rows 4, 1, 2, 3 appear in that order, and rows 5, 6 and 8 do not. Slice 2 does
-  not merge while any of these fails.
-- **Expected-failure candidate:** row 7 does not appear. If no threshold keeps all four
+- **Hard:** the first four results are rows 4, 1, 2, 3 in that order, and rows 5, 6 and 8
+  are absent. Slice 2 does not merge while any of these fails.
+- **Expected-failure candidate:** the result list is exactly `[4, 1, 2, 3]`, which is to say
+  row 7 is absent. If no threshold keeps all four
   bananas and excludes row 7, the implementer marks that one assertion as an explicit
   expected failure (Vitest `test.fails`, Playwright `test.fail()`), puts the similarity table
   in the slice 2 pull request body, and the slice merges. Hybrid search stays a follow-up
@@ -81,9 +82,10 @@ apps/web    Next 16 · Mantine + Tailwind v4 · react-query · react-hook-form �
 e2e/        Playwright, own database, production web build
 ```
 
-Postgres 16 runs from docker compose on the `pgvector/pgvector:pg16` image. The first
-migration runs `CREATE EXTENSION IF NOT EXISTS vector`. Nothing else in the copied setup
-changes.
+Postgres 16 runs from docker compose on the `pgvector/pgvector:pg16` image. Slice 1's
+migration creates the `products` table; slice 2's migration runs
+`CREATE EXTENSION IF NOT EXISTS vector` and adds the column. Nothing else in the copied
+setup changes.
 
 ### How a search works, end to end
 
@@ -94,18 +96,27 @@ changes.
    above zero, order by final price ascending, cap at 20.
 4. The response carries each row with its `finalPrice` and `similarity`.
 
-If the embedding module throws (model missing, corrupt cache), the request fails with `500`
-through the central handler and, on create or update, no row is written.
+If the loaded model throws at run time on a text, the request fails with `500` through the
+central handler and, on create or update, no row is written. A model that cannot load at
+all is a boot failure, handled below, never a `500`.
 
 Producing the vector is the only machine-learning step. Everything else is ordinary database
 work: one column, one operator.
 
 ### Embedding module (`apps/api/src/modules/embeddings/`)
 
-One public function, `embed(text: string): Promise<number[]>`, and one normaliser,
-`normalizeForEmbedding(text)`: trim, lowercase, collapse whitespace. Every caller (create,
-update, search, seed) normalises through the same function, so "Banana" and "banana " give
-identical vectors.
+Three public functions: `loadEmbeddingModel(): Promise<void>`, called once by the server
+boot before listening and by the API test setup before the first request;
+`embed(text: string): Promise<number[]>`; and one normaliser, `normalizeForEmbedding(text)`:
+trim, lowercase, collapse whitespace. Every caller normalises through the same function, so
+"Banana" and "banana " give identical vectors.
+
+**One write path.** The products repository's `create` and `update` take the raw validated
+input, normalise and embed the name, and insert or update in one place. The create and
+update resolvers, the seed script and the API test all write through those two functions,
+so "a product without a vector never exists" has exactly one owner. This is a deliberate
+deviation from treasury-2's "repository holds queries only" rule for this one module, and
+`apps/api/AGENTS.md` says so.
 
 - Runtime: `@huggingface/transformers` (Transformers.js) in-process, CPU, `feature-extraction`
   pipeline with mean pooling and normalisation.
@@ -125,14 +136,15 @@ identical vectors.
 so two unrelated products from the same shop do not look alike. Description and category are
 follow-ups, not inputs.
 
-**When:** synchronously inside the create and update resolvers, before the row is written.
-A product without a vector never exists, so search never handles a missing embedding. On
-update the vector is recomputed only when the **normalised** name changes, so "Banana" to
-"banana " does not re-embed.
+**When:** synchronously inside the repository's `create` and `update`, before the row is
+written. Search never handles a missing embedding. On update the vector is recomputed only
+when the **normalised** name changes, so "Banana" to "banana " does not re-embed.
 
 ### Similarity threshold
 
-Similarity is `1 - cosine_distance`, in `[-1, 1]`; higher is closer.
+Similarity is `1 - cosine_distance`, in `[-1, 1]`; higher is closer. A row matches when its
+similarity is **greater than or equal to** the threshold. Matches are ordered by final price
+ascending, then similarity descending, then id ascending, so the order is total.
 
 - Read once at boot from `SEARCH_SIMILARITY_THRESHOLD`, a float, with a default in the API
   config module.
@@ -187,7 +199,7 @@ query, central error handler maps `ZodError → 400`, `NotFoundError → 404`, e
 | `GET /products` | Every product, newest first, each with `finalPrice`. No pagination. |
 | `POST /products` | Body `{ shopName, name, price, quantity, discountPercentage }`. Embeds the name, inserts, returns `201` with the row. |
 | `GET /products/:id` | One product with `finalPrice`, or `404`. |
-| `PATCH /products/:id` | Partial body of the same fields. Re-embeds when `name` changes. Returns the row, or `404`. |
+| `PATCH /products/:id` | Partial body of the same fields. Re-embeds when the normalised name changes. Returns the row, or `404`. |
 | `DELETE /products/:id` | `204`, or `404`. |
 | `GET /products/search?q=` | Matches cheapest first, each with `finalPrice` and `similarity`. Empty `q` (missing or whitespace) or longer than 200 characters is `400`. Nothing above threshold is `200 []`. Zero-stock rows are excluded. Cap 20. |
 
@@ -210,18 +222,20 @@ form schema before it reaches the API client, quantity, discount percentage. Sli
 treasury-2.
 
 States: the table shows a loading indicator until the list arrives and an inline error
-message if the request fails. The drawer disables its submit while the request is in flight,
-shows the API's validation message inline on `400`, a generic error on any other failure, and
-closes and refreshes the table on success.
+message if the request fails. The drawer validates with its Zod schema before submitting,
+disables its submit while the request is in flight, shows a generic inline error on any
+non-2xx response, and closes and refreshes the table on success.
 
 **Search page (`/buscar`).** One text input, submit on Enter or button. Results as cards,
 cheapest first: shop, name, original price struck through, final price, discount badge, stock,
 and the similarity as a small muted number. An empty state ("Nenhum produto parecido com
 '…'") when the list is empty. This page is the demo.
 
-States: while a query runs the page shows a loading indicator and keeps the previous results
-visible; on an API or network failure it shows an inline error and keeps the previous
-results. Because the model is loaded at API boot, no request pays the warm-up.
+States: before the first search the page shows only the form and a one-line prompt
+("Digite o nome de um produto"), no cards and no empty state. While a query runs the page
+shows a loading indicator and keeps the previous results visible; on an API or network
+failure it shows an inline error and keeps the previous results. Because the model is loaded
+at API boot, no request pays the warm-up.
 
 Money is displayed as "R$ 4,99" through a helper like treasury-2's. Accessibility and
 styling rules from treasury-2's web `AGENTS.md` apply to every new component (they are all
@@ -247,9 +261,9 @@ a PR opens. Slice 1 names them in `AGENTS.md` under "Local gates": `pnpm test`,
   | Slice | Component | What its stories assert in `play()` |
   |---|---|---|
   | 1 | `ProductsTable` | one row per product; original price struck through only when discount is above zero; discount badge text; final price formatted "R$ 3,00"; stock shown; loading and error states |
-  | 1 | `ProductForm` (drawer) | required fields rejected with a visible message; reais input becomes cents in the submitted value; submit disabled while pending; API error shown inline |
+  | 1 | `ProductForm` (drawer) | required fields rejected with a visible message; reais input becomes cents in the submitted value; submit disabled while pending; generic error shown inline on failure |
   | 2 | `SearchForm` | empty query is not submitted; submit on Enter |
-  | 2 | `SearchResults` | cards in the order given, cheapest first; loading keeps previous cards; error message shown with previous cards |
+  | 2 | `SearchResults` | idle: prompt text, no cards, no empty state; cards in the order given, cheapest first; loading keeps previous cards; error message shown with previous cards |
   | 2 | `SearchResultCard` | shop, name, struck original price, final price, discount badge, stock, similarity rendered as a muted number |
   | 2 | `SearchEmptyState` | text contains the query verbatim |
   | 3 | `ProductForm` | prefilled values in edit mode |
@@ -261,7 +275,9 @@ a PR opens. Slice 1 names them in `AGENTS.md` under "Local gates": `pnpm test`,
   assert the four cards in order and no decoy (row 7 under the expected-failure rule above).
   Slice 3: rename a banana to "maçã" and see it leave the results.
 - **Seed.** `pnpm --filter api seed` truncates `products` and inserts the fixture through the
-  repository, so seeded rows take the same embedding path as the API.
+  repository's `create`, the one write path, so seeded rows carry the same vectors as rows
+  created through the API. Its proof is one small test: after running, the table holds
+  exactly the fixture's rows.
 
 ## Repository standards adopted from treasury-2
 
@@ -316,9 +332,15 @@ Settled in the grill session of 2026-09-22 and the spec review round 1.
   finding 1; the alternative, blocking slice 2 on a hybrid slice, was declined for scope).
 - **Duplicates of the same shop and name are allowed** as two offers (review round 1,
   finding 5; a unique constraint with `409` was declined because #3 wants several batches).
+- **The products repository owns the embedding step** (review round 2, finding 1). The
+  alternative, a separate service function that resolver, seed and test all import, was
+  declined as one more layer for the same guarantee.
+- **The hard assertion is prefix order, not exact list** (review round 2, finding 2), so the
+  row 7 expected failure and the hard tier can both hold.
 - **Declined, wrong gate, forwarded to the plan gate:** what the API does when
   `SEARCH_SIMILARITY_THRESHOLD` is not a float or outside `[-1, 1]` (recommend fail at boot);
-  which fixture row the zero-stock search test sets to zero stock.
+  which fixture row the zero-stock search test sets to zero stock; how the e2e package
+  imports the fixture from the API package (relative path or workspace dependency).
 
 - **Proof is one written scenario with an expected ranking**, seeded and asserted at HTTP and
   e2e, reproducible by hand.
