@@ -17,6 +17,7 @@ describe("the banana scenario", () => {
   let server: Server;
   let base: string;
   let idOf: (key: string) => number;
+  let softDecoyId: number;
   let hits: Hit[];
 
   beforeAll(async () => {
@@ -35,6 +36,9 @@ describe("the banana scenario", () => {
       if (!found) throw new Error(`scenario row ${key} not seeded`);
       return found.id;
     };
+    // Resolved here, not in the expected-failure body: a seeding break must fail the suite,
+    // not pass as the expected failure.
+    softDecoyId = idOf(SOFT_DECOY_KEY);
     hits = await (
       await fetch(`${base}/products/search?q=${encodeURIComponent(BANANA_QUERY)}`)
     ).json();
@@ -54,8 +58,9 @@ describe("the banana scenario", () => {
   // Expected failure (spec § The proof scenario): "Bolo de banana" scores 0.9157 against
   // "banana", above the lowest match ("Banana prata orgânica", 0.7899), so no threshold
   // keeps all five matches and excludes it. The similarity table is in the slice 2 PR body.
-  it.fails("bolo de banana is absent, so the list is exactly the five matches", () => {
-    expect(hits.map((h) => h.id)).toEqual(EXPECTED_MATCH_KEYS_IN_ORDER.map(idOf));
-    expect(hits.map((h) => h.id)).not.toContain(idOf(SOFT_DECOY_KEY));
+  // The body asserts only that absence, so the test fails for that reason alone; the five
+  // matches and the hard decoys are proven by the hard tests above.
+  it.fails("bolo de banana is absent", () => {
+    expect(hits.map((h) => h.id)).not.toContain(softDecoyId);
   });
 });

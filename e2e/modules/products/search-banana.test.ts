@@ -10,6 +10,10 @@ import {
   scenarioRow,
 } from "../../../apps/api/src/modules/products/fixtures/banana-scenario";
 
+// Resolved at load, not in the expected-failure body: a broken fixture must fail the file,
+// not pass as the expected failure.
+const SOFT_DECOY_NAME = scenarioRow(SOFT_DECOY_KEY).name;
+
 async function seedScenario(request: APIRequestContext) {
   for (const row of BANANA_SCENARIO) {
     const { key: _key, ...input } = row;
@@ -43,13 +47,14 @@ test.describe("searching for banana", () => {
   // Expected failure (spec § The proof scenario): "Bolo de banana" scores 0.9157 against
   // "banana", above the lowest match (0.7899), so no threshold can exclude it. The
   // similarity table is in the slice 2 PR body.
-  test("bolo de banana is absent, so the list is exactly the five matches", async ({ page }) => {
+  // The body asserts only that absence, so the test fails for that reason alone; the five
+  // matches and the hard decoys are proven by the hard test above.
+  test("bolo de banana is absent", async ({ page }) => {
     test.fail();
     const names = await page
       .getByRole("article")
       .evaluateAll((els) => els.map((el) => el.getAttribute("aria-label")));
-    expect(names).toEqual(EXPECTED_MATCH_KEYS_IN_ORDER.map((k) => scenarioRow(k).name));
-    expect(names).not.toContain(scenarioRow(SOFT_DECOY_KEY).name);
+    expect(names).not.toContain(SOFT_DECOY_NAME);
   });
 
   // Relies on `retry: false` in useProductSearch: the alert must appear inside Playwright's
