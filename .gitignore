@@ -22,3 +22,7 @@ storybook-static/
 
 # Vitest browser mode writes failure screenshots beside the story file
 __screenshots__/
+
+# Next.js generated files
+*.tsbuildinfo
+next-env.d.ts
