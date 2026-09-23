@@ -10,6 +10,8 @@ import { toCreateProductInput } from "@/modules/products/utils/to-create-product
 
 export interface ProductFormProps {
   opened: boolean;
+  title: string;
+  initialValues?: ProductFormValues;
   onClose: () => void;
   onSubmit: (input: CreateProductInput) => Promise<void>;
   pending: boolean;
@@ -25,7 +27,15 @@ const EMPTY: ProductFormValues = {
 };
 
 /** Presentational: validates the form and hands the API's integers to `onSubmit`. */
-export function ProductForm({ opened, onClose, onSubmit, pending, error }: ProductFormProps) {
+export function ProductForm({
+  opened,
+  title,
+  initialValues,
+  onClose,
+  onSubmit,
+  pending,
+  error,
+}: ProductFormProps) {
   const {
     register,
     handleSubmit,
@@ -37,7 +47,10 @@ export function ProductForm({ opened, onClose, onSubmit, pending, error }: Produ
   });
 
   useEffect(() => {
-    if (opened) reset(EMPTY);
+    if (opened) reset(initialValues ?? EMPTY);
+    // A form is reset when it opens, never while it is open; `initialValues` is read at
+    // that moment only. The container remounts the form per product with a `key`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opened, reset]);
 
   const submit = handleSubmit(async (values) => {
@@ -45,7 +58,7 @@ export function ProductForm({ opened, onClose, onSubmit, pending, error }: Produ
   });
 
   return (
-    <Drawer opened={opened} onClose={onClose} title="Novo produto" position="right" size="md">
+    <Drawer opened={opened} onClose={onClose} title={title} position="right" size="md">
       <form onSubmit={submit} noValidate className="grid gap-4">
         <TextInput label="Loja" error={errors.shopName?.message} {...register("shopName")} />
         <TextInput label="Nome do produto" error={errors.name?.message} {...register("name")} />

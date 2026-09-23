@@ -28,4 +28,16 @@ describe("productsAPI", () => {
     await productsAPI.search("banana prata");
     expect(String(spy.mock.calls[0][0])).toMatch(/\/products\/search\?q=banana%20prata$/);
   });
+
+  it("patches /products/:id and deletes /products/:id", async () => {
+    const spy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("{}", { status: 200 }));
+    await productsAPI.update(7, { price: 100 });
+    expect(String(spy.mock.calls[0][0])).toMatch(/\/products\/7$/);
+    expect(spy.mock.calls[0][1]?.method).toBe("PATCH");
+    spy.mockResolvedValue(new Response(null, { status: 204 }));
+    await productsAPI.remove(7);
+    expect(spy.mock.calls[1][1]?.method).toBe("DELETE");
+  });
 });

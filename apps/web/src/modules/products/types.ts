@@ -24,3 +24,5 @@ export interface CreateProductInput {
   quantity: number;
   discountPercentage: number;
 }
+
+export type UpdateProductInput = Partial<CreateProductInput>;

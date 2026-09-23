@@ -47,6 +47,7 @@ export function ProductsPageContainer() {
       />
       <ProductForm
         opened={formOpen}
+        title="Novo produto"
         onClose={() => setFormOpen(false)}
         onSubmit={submit}
         pending={create.isPending}
