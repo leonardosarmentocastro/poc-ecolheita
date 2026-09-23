@@ -1,5 +1,7 @@
+import { useState } from "react";
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
-import { expect, fn, screen, userEvent, within } from "storybook/test";
+import { Button } from "@mantine/core";
+import { expect, fn, screen, userEvent, waitFor, within } from "storybook/test";
 import { ProductForm } from "@/modules/products/components/ProductForm";
 
 const meta = {
@@ -65,11 +67,32 @@ export const Failed: Story = {
   },
 };
 
-/** Escape closes the drawer. */
+/** Escape closes the drawer and returns focus to the button that opened it. */
 export const EscapeCloses: Story = {
-  play: async ({ args }) => {
+  // The trigger lives in the page, so the story supplies one to prove focus comes back to it.
+  render: function EscapeClosesRender(args) {
+    const [opened, setOpened] = useState(false);
+    return (
+      <>
+        <Button onClick={() => setOpened(true)}>Novo produto</Button>
+        <ProductForm
+          {...args}
+          opened={opened}
+          onClose={() => {
+            args.onClose();
+            setOpened(false);
+          }}
+        />
+      </>
+    );
+  },
+  play: async ({ args, canvasElement }) => {
+    const trigger = within(canvasElement).getByRole("button", { name: "Novo produto" });
+    await userEvent.click(trigger);
     await drawer();
     await userEvent.keyboard("{Escape}");
     await expect(args.onClose).toHaveBeenCalled();
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await waitFor(() => expect(trigger).toHaveFocus());
   },
 };
