@@ -1,0 +1,169 @@
+name: CI
+
+# The PR gate. Five suite jobs in parallel, each a thin wrapper around scripts/ci/<job>.sh
+# so the same thing runs on a laptop; `gate` is the one check a human or a ruleset reads.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  # A superseded run on a branch is cancelled; a push to main always keeps its run.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  static:
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: scripts/ci/static.sh
+
+  api:
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ecolheita
+          POSTGRES_PASSWORD: ecolheita
+          POSTGRES_DB: ecolheita
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ecolheita -d ecolheita"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://ecolheita:ecolheita@localhost:5432/ecolheita_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Mirrors docker/postgres/init.sql: the suite migrates ecolheita_test but never
+      # creates it.
+      - name: Create ecolheita_test
+        run: psql postgres://ecolheita:ecolheita@localhost:5432/ecolheita -c 'CREATE DATABASE ecolheita_test'
+      - run: scripts/ci/api.sh
+
+  web:
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: scripts/ci/web.sh
+
+  stories:
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ steps.playwright.outputs.version }}
+      - name: Chromium OS packages
+        run: pnpm exec playwright install-deps chromium
+      - run: scripts/ci/stories.sh
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: stories-screenshots
+          path: apps/web/**/__screenshots__/**
+          if-no-files-found: ignore
+          retention-days: 7
+
+  e2e:
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ecolheita
+          POSTGRES_PASSWORD: ecolheita
+          POSTGRES_DB: ecolheita
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ecolheita -d ecolheita"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # The harness creates ecolheita_e2e itself through the `ecolheita` admin database.
+      E2E_DATABASE_URL: postgres://ecolheita:ecolheita@localhost:5432/ecolheita_e2e
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ steps.playwright.outputs.version }}
+      - name: Chromium OS packages
+        run: pnpm exec playwright install-deps chromium
+      - run: scripts/ci/e2e.sh
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-report
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          if-no-files-found: ignore
+          retention-days: 7
+
+  gate:
+    # The one check to read. Runs even when a suite job failed, and fails unless every
+    # suite job succeeded (failed, cancelled and skipped all count as not passed).
+    needs: [static, api, web, stories, e2e]
+    if: always()
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    steps:
+      - name: Every suite job succeeded
+        run: |
+          results="${{ join(needs.*.result, ' ') }}"
+          echo "suite results: $results"
+          for r in $results; do
+            [ "$r" = "success" ] || { echo "gate: a suite job did not succeed"; exit 1; }
+          done

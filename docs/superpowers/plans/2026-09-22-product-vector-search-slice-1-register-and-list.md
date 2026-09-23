@@ -15,7 +15,7 @@
 
 ## Global Constraints
 
-- Branch `feat/product-vector-search-slice-1` off `feat/product-vector-search`; commits small, one TDD cycle each; never commit to `main`.
+- Branch `feat/product-vector-search-slice-1-register-and-list` off `feat/product-vector-search` (the stack table's name; created by the orchestrator, not by Task 1); commits small, one TDD cycle each; never commit to `main`.
 - **This slice crosses the twenty-file tripwire.** The scaffold (workspace, two apps, harnesses, CI) is unavoidable and cannot be split horizontally without producing slices with no behaviour to test.
 - Ports and databases: API 3333, web 3000, e2e API 4333, e2e web 4300; databases `ecolheita`, `ecolheita_test`, `ecolheita_e2e`; Postgres image `pgvector/pgvector:pg16`; credentials `ecolheita` / `ecolheita`.
 - Money is integer cents everywhere in the API and in web types; `finalPrice = Math.round(price * (100 - discountPercentage) / 100)`; the web formats with `formatBRL` and never computes a final price.
@@ -1406,7 +1406,7 @@ In "Validation & errors", keep `ZodError -> 400`, `NotFoundError -> 404`, else `
 
 - [ ] **Step 4: Write `apps/web/AGENTS.md`**
 
-Copy `treasury-2/apps/web/AGENTS.md` and make these edits: title "Ecolheita Web — conventions"; in Layout replace the `expenses` example module with `products`; delete the `components/ui/` shadcn line and the sentence "A shadcn primitive is replaced when a slice touches it"; delete the "Effective date" and "grandfathered" sentences (every component here is new); replace the notifications sentence with "Notifications go through `src/lib/notify.ts`"; in "Data & forms" write "Money display uses `modules/products/utils/format-brl.ts`; API amounts are **cents**; the form parses reais typed by a person into cents in `modules/products/utils/parse-reais-to-cents.ts`." Keep the whole Styling rule list and the `dom/` section. Keep the `nextjs-agent-rules` block at the top.
+Copy `treasury-2/apps/web/AGENTS.md` and make these edits: title "Ecolheita Web — conventions"; in Layout replace the `expenses` example module with `products`; delete the `components/ui/` shadcn line and the sentence "A shadcn primitive is replaced when a slice touches it"; delete the "Effective date" and "grandfathered" sentences (every component here is new); replace the notifications sentence with "Notifications go through `src/lib/notify.tsx`"; in "Data & forms" write "Money display uses `modules/products/utils/format-brl.ts`; API amounts are **cents**; the form parses reais typed by a person into cents in `modules/products/utils/parse-reais-to-cents.ts`." Keep the whole Styling rule list and the `dom/` section. Keep the `nextjs-agent-rules` block at the top.
 
 - [ ] **Step 5: Commit**
 
@@ -2670,3 +2670,8 @@ git push -u origin feat/product-vector-search-slice-1
 ```
 
 The PR is opened by `/implement-stack` against `feat/product-vector-search` with `Plan: docs/superpowers/plans/2026-09-22-product-vector-search-slice-1-register-and-list.md` in its body.
+
+## Review decisions
+
+- Implementer, 2026-09-22: Global Constraints branch name aligned with the handover's stack table (`feat/product-vector-search-slice-1-register-and-list`); Task 1 Step 1 (create branch) and the `git push` in Task 11 Step 5 were not run, because the orchestrator creates the branch and pushes.
+- Implementer, 2026-09-22: Task 5 Step 4's notifications path now reads `src/lib/notify.tsx`, matching the file Task 6 creates.
