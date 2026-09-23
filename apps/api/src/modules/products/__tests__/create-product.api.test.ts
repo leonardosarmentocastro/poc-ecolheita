@@ -72,4 +72,17 @@ describe("POST /products", () => {
     expect(res.status).toBe(400);
     expect((await res.json()).error).toBe("validation_error");
   });
+
+  it("never serialises the embedding", async () => {
+    const res = await json(base, "/products", {
+      method: "POST",
+      body: JSON.stringify(bananaPrata),
+    });
+    const body = await res.json();
+    expect(body).not.toHaveProperty("embedding");
+    const list = await (await fetch(`${base}/products`)).json();
+    expect(list[0]).not.toHaveProperty("embedding");
+    const one = await (await fetch(`${base}/products/${body.id}`)).json();
+    expect(one).not.toHaveProperty("embedding");
+  });
 });

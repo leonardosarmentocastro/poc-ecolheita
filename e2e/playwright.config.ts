@@ -43,7 +43,13 @@ export default defineConfig({
       command: "pnpm --filter api start",
       port: API_PORT,
       reuseExistingServer: false,
-      env: { PORT: String(API_PORT), DATABASE_URL: DB_URL },
+      // The API loads the embedding model before it listens; a cold model cache also
+      // downloads it. Three minutes covers both on a runner.
+      timeout: 180_000,
+      // The scenario asserts the calibrated default threshold. An empty value is read as
+      // unset by the API's env schema, and dotenv never overrides a variable already set,
+      // so neither the shell nor apps/api/.env can move it.
+      env: { PORT: String(API_PORT), DATABASE_URL: DB_URL, SEARCH_SIMILARITY_THRESHOLD: "" },
     },
     {
       // NEXT_PUBLIC_* is inlined at build time, so the build must see API_URL — which is

@@ -26,3 +26,6 @@ __screenshots__/
 # Next.js generated files
 *.tsbuildinfo
 next-env.d.ts
+
+# Embedding model files downloaded by Transformers.js
+apps/api/.models/

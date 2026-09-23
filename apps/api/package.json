@@ -10,9 +10,12 @@
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "test": "vitest run"
+    "test": "vitest run",
+    "seed": "tsx src/db/seed-cli.ts",
+    "similarity": "tsx src/db/similarity-table-cli.ts"
   },
   "dependencies": {
+    "@huggingface/transformers": "^4.3.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",

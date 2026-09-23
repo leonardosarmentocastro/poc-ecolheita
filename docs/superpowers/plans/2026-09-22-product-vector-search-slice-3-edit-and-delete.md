@@ -805,7 +805,7 @@ test("renaming Banana to Maçã takes it out of the banana results", async ({ pa
   await expect(page.getByRole("article").first()).toBeVisible();
   const names = await page.getByRole("article").evaluateAll((els) => els.map((el) => el.getAttribute("aria-label")));
   expect(names).not.toContain("Maçã");
-  expect(names.slice(0, 3)).toEqual(["Banana prata orgânica", "Banana prata", "Banana nanica"]);
+  expect(names.slice(0, 4)).toEqual(["Banana prata orgânica", "Bananada", "Banana prata", "Banana nanica"]);
 });
 
 test("deleting a product removes its row", async ({ page, request }) => {
