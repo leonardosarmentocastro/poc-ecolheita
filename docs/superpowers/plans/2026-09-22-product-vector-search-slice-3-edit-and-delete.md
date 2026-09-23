@@ -1,6 +1,6 @@
 # Product vector search — slice 3: edit and delete
 
-**Reviewed:** round 1 (2026-09-22).
+**Reviewed:** round 1 (2026-09-22) · round 2 (2026-09-22).
 **Owns:** Changing and removing a registered product: `PATCH` and `DELETE /products/:id`, re-embedding when the normalised name changes, the edit mode of the product drawer, the delete confirmation dialog, and the row actions on the products table.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. In this repository the orchestrator is `/implement-stack`, which runs the implementer agent on this plan.
@@ -94,9 +94,11 @@ describe("PATCH /products/:id", () => {
   });
 
   it("re-embeds when the normalised name changes", async () => {
+    // "Maçã", not "Maçã argentina": the same rename the e2e proves, so the HTTP tier
+    // catches a threshold that lets a bare fruit noun through before the browser does.
     const created = await create(base);
     const before = await productsRepository.findEmbedding(created.id);
-    const res = await patch(base, created.id, { name: "Maçã argentina" });
+    const res = await patch(base, created.id, { name: "Maçã" });
     expect(res.status).toBe(200);
     const after = await productsRepository.findEmbedding(created.id);
     expect(after).not.toEqual(before);
@@ -341,7 +343,7 @@ git commit -m "feat(api): DELETE /products/:id"
 
 **Files:**
 - Create: `apps/web/src/modules/products/utils/cents-to-reais-input.ts`, `apps/web/src/modules/products/utils/cents-to-reais-input.test.ts`, `apps/web/src/modules/products/utils/to-product-form-values.ts`, `apps/web/src/modules/products/utils/to-product-form-values.test.ts`
-- Modify: `apps/web/src/modules/products/types.ts`, `apps/web/src/modules/products/api.ts`, `apps/web/src/modules/products/api.test.ts`, `apps/web/src/modules/products/hooks/use-product-mutations.ts`, `apps/web/src/modules/products/components/ProductForm.tsx`, `apps/web/src/modules/products/components/ProductForm.stories.tsx`
+- Modify: `apps/web/src/modules/products/types.ts`, `apps/web/src/modules/products/api.ts`, `apps/web/src/modules/products/api.test.ts`, `apps/web/src/modules/products/hooks/use-product-mutations.ts`, `apps/web/src/modules/products/components/ProductForm.tsx`, `apps/web/src/modules/products/components/ProductForm.stories.tsx`, `apps/web/src/modules/products/components/ProductsPageContainer.tsx` (passes `title`)
 
 **Interfaces:**
 - Produces: `UpdateProductInput = Partial<CreateProductInput>`; `productsAPI.update(id, input)`, `productsAPI.remove(id)`; `useUpdateProduct()`, `useDeleteProduct()`; `centsToReaisInput(cents): string` ("500" → "5,00"); `toProductFormValues(product): ProductFormValues`; `ProductForm` props gain `initialValues?: ProductFormValues` and `title: string`.
@@ -558,7 +560,7 @@ git commit -m "feat(web): update and delete API, hooks, ProductForm edit mode"
 
 **Files:**
 - Create: `apps/web/src/modules/products/components/DeleteProductDialog.tsx`, `apps/web/src/modules/products/components/DeleteProductDialog.stories.tsx`
-- Modify: `apps/web/src/modules/products/components/ProductsTable.tsx`, `apps/web/src/modules/products/components/ProductsTable.stories.tsx`
+- Modify: `apps/web/src/modules/products/components/ProductsTable.tsx`, `apps/web/src/modules/products/components/ProductsTable.stories.tsx`, `apps/web/src/modules/products/components/ProductsPageContainer.tsx` (no-op `onEdit` / `onDelete` until Task 5)
 
 **Interfaces:**
 - Produces: `<DeleteProductDialog product={Product | null} deleting onConfirm onClose />`; `ProductsTable` props gain `onEdit: (p: Product) => void` and `onDelete: (p: Product) => void`.
@@ -823,7 +825,7 @@ test("deleting a product removes its row", async ({ page, request }) => {
 pnpm e2e
 ```
 
-Expected: FAIL (no "Editar Banana" button on the page yet, since the container passes no handlers).
+Expected: FAIL. The buttons exist since Task 4 (with no-op handlers), so the click succeeds and the test fails at the "Editar produto" dialog never appearing; the delete test fails the same way at its dialog.
 
 - [ ] **Step 3: Wire the container**
 

@@ -1,6 +1,6 @@
 # Product vector search — slice 2: search by meaning
 
-**Reviewed:** round 1 (2026-09-22).
+**Reviewed:** round 1 (2026-09-22) · round 2 (2026-09-22).
 **Owns:** Finding the same product across shops by meaning and ranking it by best price: the embedding module and model loaded at boot, the pgvector extension and `embedding` column, embedding on create, `GET /products/search`, the similarity threshold, the banana fixture, the seed script, the similarity table, the search page, and the search rules appended to `CONTEXT.md`.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. In this repository the orchestrator is `/implement-stack`, which runs the implementer agent on this plan.
@@ -25,6 +25,7 @@
 - `similarity = 1 - cosine_distance`; a row matches when `similarity >= SEARCH_SIMILARITY_THRESHOLD`; order by `round(price * (100 - discountPercentage) / 100)` ascending, then similarity descending, then id ascending; cap 20; zero stock excluded; `q` trimmed, non-empty, at most 200 characters, else 400.
 - `SEARCH_SIMILARITY_THRESHOLD` is a float in `[-1, 1]`; an invalid value fails the boot (Zod on the env). The default is chosen from the similarity table in Task 7 and committed as the default in `env.ts`.
 - The `embedding` column is never serialised: every read selects the public columns explicitly.
+- "The loaded model throws at run time on a text → 500 and no row written" holds by construction (the repository embeds before it inserts; the resolver forwards with `next(err)`) and is **untested**, because the only way to test it is to mock `embed`, which this plan forbids. Recorded here so the slice reviewer does not read the gap as forgotten.
 - The scenario's two tiers (spec § The proof scenario): hard assertions must pass for the slice to merge; the "bolo de banana" exclusion may be marked an expected failure (`it.fails` / `test.fail()`) with the similarity table in the PR body.
 - Slice 2's migration truncates `products` before adding the `not null` column.
 - Web rules as slice 1: presentational components with stories, containers without; Portuguese copy, English identifiers.
@@ -187,7 +188,13 @@ export * from "@/modules/embeddings/normalize-for-embedding";
 export * from "@/modules/embeddings/embedding-model";
 ```
 
-In `vitest.config.ts`, add to the `test` block: `hookTimeout: 120_000,` (the first run downloads the model). In `test/setup.ts`, add:
+In `vitest.config.ts`, add to the `test` block: `hookTimeout: 120_000,` (the first run downloads the model). Above `defineConfig`, next to the `DATABASE_URL` line, add:
+
+```ts
+// The scenario test is a regression guard on the calibrated default; an exported shell
+// variable must not silently move it.
+delete process.env.SEARCH_SIMILARITY_THRESHOLD;
+``` In `test/setup.ts`, add:
 
 ```ts
 import { beforeAll } from "vitest";
@@ -394,6 +401,14 @@ Expected: FAIL (`findEmbedding` missing; the serialisation test passes trivially
 ```bash
 cd apps/api && pnpm db:generate && ls drizzle
 ```
+
+Before touching the repository, see the serialisation test fail for real: with the column in the model and the repository still using a bare `.returning()` and `select()`, the inserted row now carries `embedding`, so run
+
+```bash
+cd apps/api && pnpm vitest run src/modules/products/__tests__/create-product.api.test.ts -t "never serialises"
+```
+
+Expected: FAIL (a typecheck error on the missing `embedding` value at insert, or a response that has the property). Only then continue.
 
 Open the new `0001_*.sql`. Replace its content with (keep drizzle's generated `ALTER TABLE` line as the last statement):
 
@@ -660,13 +675,13 @@ git commit -m "feat(api): banana scenario fixture and seed script"
 ### Task 5: `GET /products/search`
 
 **Files:**
-- Create: `apps/api/src/modules/products/search-schema.ts`, `apps/api/src/modules/products/resolvers/search-products-resolver.ts`, `apps/api/src/modules/products/__tests__/search-products.api.test.ts`, `apps/api/src/modules/products/__tests__/search-scenario.api.test.ts`
+- Create: `apps/api/src/modules/products/search-schema.ts`, `apps/api/src/modules/products/resolvers/search-products-resolver.ts`, `apps/api/src/modules/products/__tests__/search-products.api.test.ts`
 - Modify: `apps/api/src/modules/products/repository.ts`, `apps/api/src/modules/products/types.ts`, `apps/api/src/modules/products/resolvers/index.ts`, `apps/api/src/modules/products/routes.ts`
 
 **Interfaces:**
 - Produces: `SearchResult = Product & { similarity: number }`; `productsRepository.search(queryVector, { threshold, limit }): Promise<SearchResult[]>`; `searchQuerySchema` (`q` trimmed, 1..200); route `GET /products/search?q=` mounted **before** `/:id`.
 
-- [ ] **Step 1: Write the failing contract tests**
+- [ ] **Step 1: Write the failing contract test**
 
 `__tests__/search-products.api.test.ts`:
 
@@ -748,72 +763,10 @@ describe("GET /products/search", () => {
 });
 ```
 
-`__tests__/search-scenario.api.test.ts`:
-
-```ts
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import type { Server } from "node:http";
-import { startServer, stopServer } from "@test/helpers";
-import { seedBananaScenario } from "@/db/seed";
-import {
-  BANANA_QUERY,
-  EXPECTED_MATCH_KEYS_IN_ORDER,
-  HARD_DECOY_KEYS,
-  SOFT_DECOY_KEY,
-  scenarioRow,
-} from "@/modules/products/fixtures/banana-scenario";
-import { productsRepository } from "@/modules/products/repository";
-
-type Hit = { id: number; name: string; shopName: string; similarity: number };
-
-describe("the banana scenario", () => {
-  let server: Server;
-  let base: string;
-  let idOf: (key: string) => number;
-  let hits: Hit[];
-
-  beforeAll(async () => {
-    ({ server, base } = await startServer());
-  });
-  afterAll(async () => {
-    await stopServer(server);
-  });
-
-  beforeEach(async () => {
-    await seedBananaScenario();
-    const all = await productsRepository.findAll();
-    idOf = (key) => {
-      const row = scenarioRow(key);
-      const found = all.find((p) => p.name === row.name && p.shopName === row.shopName);
-      if (!found) throw new Error(`scenario row ${key} not seeded`);
-      return found.id;
-    };
-    hits = await (await fetch(`${base}/products/search?q=${encodeURIComponent(BANANA_QUERY)}`)).json();
-  });
-
-  it("hard: the first four results are the four bananas, cheapest first", () => {
-    expect(hits.slice(0, 4).map((h) => h.id)).toEqual(EXPECTED_MATCH_KEYS_IN_ORDER.map(idOf));
-  });
-
-  it("hard: bananada, maçã and carne moída are absent", () => {
-    const ids = hits.map((h) => h.id);
-    for (const key of HARD_DECOY_KEYS) expect(ids).not.toContain(idOf(key));
-  });
-
-  // If Task 7's similarity table shows no threshold keeps all four bananas and excludes
-  // "bolo de banana", change `it` to `it.fails` and paste the table in the PR body
-  // (spec § The proof scenario, expected-failure candidate).
-  it("bolo de banana is absent, so the list is exactly the four bananas", () => {
-    expect(hits.map((h) => h.id)).toEqual(EXPECTED_MATCH_KEYS_IN_ORDER.map(idOf));
-    expect(hits.map((h) => h.id)).not.toContain(idOf(SOFT_DECOY_KEY));
-  });
-});
-```
-
-- [ ] **Step 2: Run them to verify they fail**
+- [ ] **Step 2: Run it to verify it fails**
 
 ```bash
-cd apps/api && pnpm vitest run src/modules/products/__tests__/search-products.api.test.ts src/modules/products/__tests__/search-scenario.api.test.ts
+cd apps/api && pnpm vitest run src/modules/products/__tests__/search-products.api.test.ts
 ```
 
 Expected: FAIL with 404s (`/products/search` reaches `/:id` and is not a number).
@@ -908,7 +861,7 @@ productsRouter.get("/:id", resolvers.getProductResolver);
 cd apps/api && pnpm test && pnpm typecheck && pnpm lint
 ```
 
-Expected: the contract tests pass. The scenario tests may be red until Task 7 picks the threshold; if the hard tests are red at the default of 0.6, continue to Task 7 before judging.
+Expected: green. The scenario test is written in Task 7, together with the threshold it asserts, so no commit carries a known-red test.
 
 - [ ] **Step 5: Commit**
 
@@ -966,39 +919,114 @@ git commit -m "chore(api): similarity table CLI for threshold calibration"
 
 ---
 
-### Task 7: Calibrate the threshold from the table
+### Task 7: The scenario test, calibrated against the table
 
 **Files:**
-- Modify: `apps/api/src/config/env.ts` (default), `apps/api/.env.example`, `.env.example`, possibly `apps/api/src/modules/products/__tests__/search-scenario.api.test.ts` (`it.fails`)
+- Create: `apps/api/src/modules/products/__tests__/search-scenario.api.test.ts`
+- Modify: `apps/api/src/config/env.ts` (default), `apps/api/.env.example`, `.env.example`
 
-- [ ] **Step 1: Read the table**
+**Interfaces:**
+- Consumes: `seedBananaScenario`, the fixture's keys, `productsRepository.findAll`, `pnpm similarity`.
 
-From Task 6's output, note the lowest similarity among the four bananas (`min_match`) and the highest among the four decoys (`max_decoy`), and separately the similarity of "Bolo de banana".
+The threshold and the test that guards it are written together, so no commit carries a known-red test.
+
+- [ ] **Step 1: Print the tables**
+
+```bash
+cd apps/api && pnpm similarity
+cd apps/api && pnpm similarity maçã
+```
+
+From the first table note the lowest similarity among the four bananas (`min_match`) and the highest among the three hard decoys (bananada, maçã argentina, carne moída), and separately the similarity of "Bolo de banana". From the second table note the similarity of the "Banana" row to the query "maçã": slice 3 renames "Banana" to "Maçã" and expects it to leave the banana results, so bare "maçã" is one more value the default must exceed. `max_decoy` is the highest of the three hard decoys and the "maçã"-vs-"Banana" value.
 
 - [ ] **Step 2: Choose the default**
 
-- If `max_decoy < min_match`: default = the midpoint, rounded to two decimals. All three scenario tests will pass.
-- If only "Bolo de banana" sits above `min_match` (the other three decoys below): default = the midpoint between the highest of those three and `min_match`; change the third scenario test to `it.fails` and keep its body. The hard tier stays green.
-- If bananada, maçã or carne moída cannot be separated from the four bananas by any threshold: stop. This is a design change (spec § Terminal states); report it with the table.
+- If `max_decoy < min_match` and "Bolo de banana" is also below `min_match`: default = the midpoint between `max_decoy` and `min_match`, rounded to two decimals. All scenario assertions will pass.
+- If only "Bolo de banana" sits above `min_match`: default = the midpoint between `max_decoy` and `min_match`; the third scenario test below is written as `it.fails` and keeps its body. The hard tier stays green.
+- If a hard decoy, or "maçã" against "Banana", cannot be separated from the four bananas by any threshold: stop. This is a design change (spec § Terminal states); report it with both tables. If it is the "maçã" case, the spec's slice 3 proof wording is what needs the decision.
 
 Write the value into `env.ts`'s `.default(...)` and into the commented line of both `.env.example` files.
 
-- [ ] **Step 3: Run the suite**
+- [ ] **Step 3: Write the scenario test**
+
+`__tests__/search-scenario.api.test.ts`:
+
+```ts
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import type { Server } from "node:http";
+import { startServer, stopServer } from "@test/helpers";
+import { seedBananaScenario } from "@/db/seed";
+import {
+  BANANA_QUERY,
+  EXPECTED_MATCH_KEYS_IN_ORDER,
+  HARD_DECOY_KEYS,
+  SOFT_DECOY_KEY,
+  scenarioRow,
+} from "@/modules/products/fixtures/banana-scenario";
+import { productsRepository } from "@/modules/products/repository";
+
+type Hit = { id: number; name: string; shopName: string; similarity: number };
+
+describe("the banana scenario", () => {
+  let server: Server;
+  let base: string;
+  let idOf: (key: string) => number;
+  let hits: Hit[];
+
+  beforeAll(async () => {
+    ({ server, base } = await startServer());
+  });
+  afterAll(async () => {
+    await stopServer(server);
+  });
+
+  beforeEach(async () => {
+    await seedBananaScenario();
+    const all = await productsRepository.findAll();
+    idOf = (key) => {
+      const row = scenarioRow(key);
+      const found = all.find((p) => p.name === row.name && p.shopName === row.shopName);
+      if (!found) throw new Error(`scenario row ${key} not seeded`);
+      return found.id;
+    };
+    hits = await (await fetch(`${base}/products/search?q=${encodeURIComponent(BANANA_QUERY)}`)).json();
+  });
+
+  it("hard: the first four results are the four bananas, cheapest first", () => {
+    expect(hits.slice(0, 4).map((h) => h.id)).toEqual(EXPECTED_MATCH_KEYS_IN_ORDER.map(idOf));
+  });
+
+  it("hard: bananada, maçã and carne moída are absent", () => {
+    const ids = hits.map((h) => h.id);
+    for (const key of HARD_DECOY_KEYS) expect(ids).not.toContain(idOf(key));
+  });
+
+  // If Task 7's similarity table shows no threshold keeps all four bananas and excludes
+  // "bolo de banana", change `it` to `it.fails` and paste the table in the PR body
+  // (spec § The proof scenario, expected-failure candidate).
+  it("bolo de banana is absent, so the list is exactly the four bananas", () => {
+    expect(hits.map((h) => h.id)).toEqual(EXPECTED_MATCH_KEYS_IN_ORDER.map(idOf));
+    expect(hits.map((h) => h.id)).not.toContain(idOf(SOFT_DECOY_KEY));
+  });
+});
+```
+
+- [ ] **Step 4: Run the suite**
 
 ```bash
 cd apps/api && pnpm test
 ```
 
-Expected: green (an `it.fails` counts as green when it fails).
+Expected: green (an `it.fails` counts as green when it fails). If a hard assertion is red, revisit Step 2 before touching the test.
 
-- [ ] **Step 4: Commit, with the table in the message body**
+- [ ] **Step 5: Commit, with both tables in the message body**
 
 ```bash
 git add apps/api .env.example
-git commit -m "feat(api): SEARCH_SIMILARITY_THRESHOLD default from the banana scenario" -m "<paste the similarity table here>"
+git commit -m "feat(api): banana scenario test; SEARCH_SIMILARITY_THRESHOLD default from its similarity table" -m "<paste both similarity tables here>"
 ```
 
-The same table goes in the PR body under a "Similarity table" heading.
+The same tables go in the PR body under a "Similarity table" heading.
 
 ---
 
@@ -1108,6 +1136,9 @@ export function useProductSearch(query: string) {
     queryFn: () => productsAPI.search(query),
     enabled: query !== "",
     placeholderData: keepPreviousData,
+    // A failed search is reported at once; the person retries by searching again. The
+    // default three retries would show "Buscando…" for seven seconds before the error.
+    retry: false,
   });
 }
 ```
@@ -1530,6 +1561,8 @@ test.describe("searching for banana", () => {
     expect(names).not.toContain(scenarioRow(SOFT_DECOY_KEY).name);
   });
 
+  // Relies on `retry: false` in useProductSearch: the alert must appear inside Playwright's
+  // five-second expect window, not after react-query's default retries.
   test("a failed search shows an error and keeps the previous results", async ({ page }) => {
     const before = await page.getByRole("article").count();
     expect(before).toBeGreaterThanOrEqual(4);

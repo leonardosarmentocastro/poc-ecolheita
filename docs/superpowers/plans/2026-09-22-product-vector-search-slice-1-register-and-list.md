@@ -1,6 +1,6 @@
 # Product vector search — slice 1: register and list
 
-**Reviewed:** round 1 (2026-09-22).
+**Reviewed:** round 1 (2026-09-22) · round 2 (2026-09-22).
 **Owns:** Registering a product and seeing it listed: the monorepo scaffold copied from treasury-2, pgvector Postgres, the `products` table, `POST` and `GET /products` (list and by id), the products page with its table and create drawer, the API, story and e2e harnesses, CI, and the durable docs (`AGENTS.md` local gates, `CONTEXT.md`, the two app `AGENTS.md`).
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. In this repository the orchestrator is `/implement-stack`, which runs the implementer agent on this plan.
