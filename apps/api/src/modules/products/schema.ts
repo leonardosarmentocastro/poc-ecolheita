@@ -17,6 +17,8 @@ export const createProductSchema = insertSchema.omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+  // Computed by the repository from the name, never accepted from a client.
+  embedding: true,
 });
 
 export type CreateProductInput = z.infer<typeof createProductSchema>;

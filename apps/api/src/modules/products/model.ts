@@ -1,4 +1,4 @@
-import { integer, pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
+import { integer, pgTable, serial, text, timestamp, vector } from "drizzle-orm/pg-core";
 
 export const products = pgTable("products", {
   id: serial("id").primaryKey(),
@@ -9,6 +9,8 @@ export const products = pgTable("products", {
   // Stock available, in units.
   quantity: integer("quantity").notNull(),
   discountPercentage: integer("discount_percentage").notNull(),
+  // The normalised name's vector (CONTEXT.md). Written only by the repository's create/update.
+  embedding: vector("embedding", { dimensions: 384 }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
