@@ -8,7 +8,7 @@ export const envSchema = z.object({
   // (`SEARCH_SIMILARITY_THRESHOLD=` in a .env) is unset, never 0.
   SEARCH_SIMILARITY_THRESHOLD: z.preprocess(
     (v) => (v === "" ? undefined : v),
-    z.coerce.number().min(-1).max(1).default(0.6),
+    z.coerce.number().min(-1).max(1).default(0.57),
   ),
 });
 
