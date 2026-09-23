@@ -43,6 +43,9 @@ export default defineConfig({
       command: "pnpm --filter api start",
       port: API_PORT,
       reuseExistingServer: false,
+      // The API loads the embedding model before it listens; a cold model cache also
+      // downloads it. Three minutes covers both on a runner.
+      timeout: 180_000,
       env: { PORT: String(API_PORT), DATABASE_URL: DB_URL },
     },
     {

@@ -2,6 +2,11 @@ import "dotenv/config";
 import { createApp } from "@/server/server";
 import { env } from "@/config/env";
 import { ensurePortAvailable, reportPortInUse } from "@/server/ensure-port-available";
+import { loadEmbeddingModel } from "@/modules/embeddings";
+
+console.log("loading embedding model…");
+await loadEmbeddingModel();
+console.log("embedding model ready");
 
 await ensurePortAvailable(env.PORT);
 
