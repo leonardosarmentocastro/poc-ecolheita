@@ -1,6 +1,7 @@
 # Product vector search — design
 
 **Feature key:** `product-vector-search` · **Branch:** `feat/product-vector-search`
+**Reviewed:** round 1 (2026-09-22).
 **Deferred follow-ups:** [#2 units and pack sizes](https://github.com/leonardosarmentocastro/poc-ecolheita/issues/2) · [#3 shop and batch grouping](https://github.com/leonardosarmentocastro/poc-ecolheita/issues/3)
 
 ## Goal
@@ -53,10 +54,19 @@ What the ordering proves: the deepest discount (row 4) wins, but row 1 at 50% be
 discount percentage. Row 5 has the lowest final price of all and must still not appear: it
 is a different product.
 
-**Known risk, accepted.** Row 7 contains the word "banana" and a sentence model may place it
-close to the query. If no threshold separates rows 1 to 4 from row 7, that is a real finding
-about name-only embedding, reported as such in the slice 2 pull request. The follow-up is
-hybrid search (below), not a weaker scenario.
+**Known risk, and what happens if it lands.** Row 7 contains the word "banana" and a
+sentence model may place it close to the query. The assertions are therefore in two tiers:
+
+- **Hard:** rows 4, 1, 2, 3 appear in that order, and rows 5, 6 and 8 do not. Slice 2 does
+  not merge while any of these fails.
+- **Expected-failure candidate:** row 7 does not appear. If no threshold keeps all four
+  bananas and excludes row 7, the implementer marks that one assertion as an explicit
+  expected failure (Vitest `test.fails`, Playwright `test.fail()`), puts the similarity table
+  in the slice 2 pull request body, and the slice merges. Hybrid search stays a follow-up
+  issue, not a slice of this feature.
+
+The threshold test is a regression guard on a default chosen from this fixture. It is not
+evidence that the model generalises to other products.
 
 The scenario is **one fixture file** in the API, imported by the API test, the e2e test and the
 seed script. There is exactly one copy of the truth.
@@ -84,6 +94,9 @@ changes.
    above zero, order by final price ascending, cap at 20.
 4. The response carries each row with its `finalPrice` and `similarity`.
 
+If the embedding module throws (model missing, corrupt cache), the request fails with `500`
+through the central handler and, on create or update, no row is written.
+
 Producing the vector is the only machine-learning step. Everything else is ordinary database
 work: one column, one operator.
 
@@ -98,7 +111,10 @@ identical vectors.
   pipeline with mean pooling and normalisation.
 - Model: `Xenova/paraphrase-multilingual-MiniLM-L12-v2`, 384 dimensions, multilingual
   including Portuguese, quantised weights of roughly 120 MB.
-- The pipeline is loaded once, lazily, on first call, and reused.
+- The pipeline is loaded once, at API boot, before the server starts listening, and reused.
+  A boot that cannot load the model (no cache and no network, corrupt files) fails fast with
+  a clear message instead of serving `500`s on the first call. The first boot with a cold
+  cache downloads roughly 120 MB; later boots load from disk in a few seconds.
 - Model files are cached under `apps/api/.models/` (gitignored). CI caches that folder keyed
   by model name so the download happens once.
 - The module is the seam: swapping to Ollama or a hosted embedding API later is a change to
@@ -111,7 +127,8 @@ follow-ups, not inputs.
 
 **When:** synchronously inside the create and update resolvers, before the row is written.
 A product without a vector never exists, so search never handles a missing embedding. On
-update the vector is recomputed only when the name changes.
+update the vector is recomputed only when the **normalised** name changes, so "Banana" to
+"banana " does not re-embed.
 
 ### Similarity threshold
 
@@ -144,7 +161,18 @@ One flat table, `products`:
 | `created_at`, `updated_at` | timestamps | as treasury-2 |
 
 Derived, never stored: `finalPrice = round(price * (100 - discountPercentage) / 100)` in
-cents, rounding half up. The API computes it; the web never does money arithmetic.
+cents, rounding half up. The API computes it; the web never computes a final price.
+
+**Duplicates are allowed.** Two rows with the same shop and name are two offers and both
+appear in search. There is no uniqueness constraint; the real flow (#3) has several batches
+of one product at one shop, and this matches it.
+
+**Durable rules.** Specs are wiped after merge, so the rules above that must outlive this
+feature get a permanent home: slice 1 creates `CONTEXT.md` with the product row, the final
+price formula and rounding, "best price means lowest final price" and "duplicates are two
+offers"; slice 2 appends the similarity definition, the threshold's meaning, "the embedded
+text is the normalised name only" and the zero-stock exclusion. Slice 1 also writes
+`apps/api/AGENTS.md` and `apps/web/AGENTS.md` adapted from treasury-2.
 
 No index on `embedding` for the POC: a sequential scan over a handful of rows is instant. An
 HNSW index is the follow-up when the table grows.
@@ -161,13 +189,14 @@ query, central error handler maps `ZodError → 400`, `NotFoundError → 404`, e
 | `GET /products/:id` | One product with `finalPrice`, or `404`. |
 | `PATCH /products/:id` | Partial body of the same fields. Re-embeds when `name` changes. Returns the row, or `404`. |
 | `DELETE /products/:id` | `204`, or `404`. |
-| `GET /products/search?q=` | Matches cheapest first, each with `finalPrice` and `similarity`. Empty `q` (missing or whitespace) is `400`. Nothing above threshold is `200 []`. Zero-stock rows are excluded. Cap 20. |
+| `GET /products/search?q=` | Matches cheapest first, each with `finalPrice` and `similarity`. Empty `q` (missing or whitespace) or longer than 200 characters is `400`. Nothing above threshold is `200 []`. Zero-stock rows are excluded. Cap 20. |
 
 `/products/search` is mounted before `/products/:id` so "search" is never read as an id.
+`POST /products` never rejects a duplicate (see Data model).
 
 The response shape of a product is the row minus `embedding`, plus `finalPrice`; search rows
-add `similarity` as a plain number with four decimals. Prices in and out are integer cents.
-Validation: strings trimmed and non-empty, integers as stated above.
+add `similarity` as a JSON number rounded to four decimal places. Prices in and out are
+integer cents. Validation: strings trimmed and non-empty, integers as stated above.
 
 ## Web
 
@@ -175,14 +204,24 @@ Two pages in Portuguese, code and routes in English, a header with two links, no
 
 **Products page (`/produtos`).** A table of every product: shop, name, price struck through
 when discounted, final price, discount badge, stock. A "Novo produto" button opens a Mantine
-drawer with the form: shop name, name, price in reais (converted to cents in the API client),
-quantity, discount percentage. Slice 3 adds edit (same drawer, prefilled) and delete with a
-confirm dialog. react-hook-form plus Zod, as treasury-2.
+drawer with the form: shop name, name, price typed in reais and parsed to integer cents by the
+form schema before it reaches the API client, quantity, discount percentage. Slice 3 adds edit
+(same drawer, prefilled) and delete with a confirm dialog. react-hook-form plus Zod, as
+treasury-2.
+
+States: the table shows a loading indicator until the list arrives and an inline error
+message if the request fails. The drawer disables its submit while the request is in flight,
+shows the API's validation message inline on `400`, a generic error on any other failure, and
+closes and refreshes the table on success.
 
 **Search page (`/buscar`).** One text input, submit on Enter or button. Results as cards,
 cheapest first: shop, name, original price struck through, final price, discount badge, stock,
 and the similarity as a small muted number. An empty state ("Nenhum produto parecido com
 '…'") when the list is empty. This page is the demo.
+
+States: while a query runs the page shows a loading indicator and keeps the previous results
+visible; on an API or network failure it shows an inline error and keeps the previous
+results. Because the model is loaded at API boot, no request pays the warm-up.
 
 Money is displayed as "R$ 4,99" through a helper like treasury-2's. Accessibility and
 styling rules from treasury-2's web `AGENTS.md` apply to every new component (they are all
@@ -200,12 +239,27 @@ a PR opens. Slice 1 names them in `AGENTS.md` under "Local gates": `pnpm test`,
   scenario is meaningless with fake vectors. The embedding module has its own test proving
   normalisation and the 384-length output.
 - **Web unit.** Money formatting, form schema, API client.
-- **Stories.** Every component under `modules/products/components/` has co-located stories
-  whose `play()` asserts the acceptance criteria named in the slice plan; containers that
-  fetch are split from presentational components so no story fetches data.
+- **Stories.** Every presentational component under `modules/products/components/` has
+  co-located stories whose `play()` asserts a visible criterion. Containers that fetch
+  (`ProductsPageContainer`, `SearchPageContainer`) are excluded from stories and render the
+  presentational components below with everything as props.
+
+  | Slice | Component | What its stories assert in `play()` |
+  |---|---|---|
+  | 1 | `ProductsTable` | one row per product; original price struck through only when discount is above zero; discount badge text; final price formatted "R$ 3,00"; stock shown; loading and error states |
+  | 1 | `ProductForm` (drawer) | required fields rejected with a visible message; reais input becomes cents in the submitted value; submit disabled while pending; API error shown inline |
+  | 2 | `SearchForm` | empty query is not submitted; submit on Enter |
+  | 2 | `SearchResults` | cards in the order given, cheapest first; loading keeps previous cards; error message shown with previous cards |
+  | 2 | `SearchResultCard` | shop, name, struck original price, final price, discount badge, stock, similarity rendered as a muted number |
+  | 2 | `SearchEmptyState` | text contains the query verbatim |
+  | 3 | `ProductForm` | prefilled values in edit mode |
+  | 3 | `DeleteProductDialog` | labelled dialog, Escape cancels, confirm calls the handler |
+
+  The slice plans name each story; the table above is the contract the plan review checks.
 - **E2E.** Slice 1: create a product through the drawer and see it in the table. Slice 2:
-  seed the scenario through the API, search "banana", assert the four cards in order and no
-  decoy. Slice 3: rename a banana to "maçã" and see it leave the results.
+  seed the scenario by `POST /products` per fixture row against the e2e API, search "banana",
+  assert the four cards in order and no decoy (row 7 under the expected-failure rule above).
+  Slice 3: rename a banana to "maçã" and see it leave the results.
 - **Seed.** `pnpm --filter api seed` truncates `products` and inserts the fixture through the
   repository, so seeded rows take the same embedding path as the API.
 
@@ -230,16 +284,17 @@ and PR against its parent, proof before completeness.
 
 | Slice | Owns | Proof |
 |---|---|---|
-| 1 `register-and-list` | The monorepo scaffold, pgvector Postgres, the `products` table and migration, `POST` and `GET /products`, the products page with table and create drawer, the API, story and e2e harnesses, `AGENTS.md` local gates. | Create a product through the UI and see it listed. |
-| 2 `search-by-meaning` | The embedding module and model, `CREATE EXTENSION vector`, the `embedding` column, embedding on create, `GET /products/search`, the threshold, the fixture, the seed script, the search page. | The banana scenario ranks as expected, at HTTP and in the browser. |
+| 1 `register-and-list` | The monorepo scaffold, pgvector Postgres, the `products` table and migration, `POST` and `GET /products`, the products page with table and create drawer, the API, story and e2e harnesses, `AGENTS.md` local gates, `CONTEXT.md` and the two app `AGENTS.md`. | Create a product through the UI and see it listed. |
+| 2 `search-by-meaning` | The embedding module and model loaded at boot, `CREATE EXTENSION vector`, the `embedding` column, embedding on create, `GET /products/search`, the threshold, the fixture, the seed script, the search page, the search rules appended to `CONTEXT.md`. | The banana scenario ranks as expected, at HTTP and in the browser. |
 | 3 `edit-and-delete` | `PATCH` and `DELETE /products/:id`, re-embedding on rename, the edit drawer and delete confirm. | Rename "Banana" to "Maçã" and watch it leave the banana results. |
 
 Slice 1 crosses the twenty-file tripwire because the scaffold is unavoidable; its plan says
 so in one line. Slice 1 ships the table **without** the `embedding` column; slice 2 adds the
-extension and the column in its own migration, `not null`, which is safe because no
-environment carries slice 1 data that must survive (dev and test databases are truncated or
-reseeded). Slice 2 also adds the embedding step to the create resolver, so from slice 2 on a
-product without a vector never exists.
+extension and the column in its own migration. That migration truncates `products` before
+adding the `not null` column, because no environment carries slice 1 data that must survive
+and a `not null` column cannot be added to a non-empty table without a default. Slice 2 also
+adds the embedding step to the create resolver, so from slice 2 on a product without a
+vector never exists.
 
 ## Known follow-ups (not in this feature)
 
@@ -252,9 +307,18 @@ product without a vector never exists.
 - **Index.** HNSW on `embedding` when the table grows.
 - **Model swap.** `multilingual-e5-small` or a hosted API, behind the same `embed()` seam.
 
-## Decisions
+## Decisions and declined alternatives
 
-Settled in the grill session of 2026-09-22.
+Settled in the grill session of 2026-09-22 and the spec review round 1.
+
+- **If "bolo de banana" cannot be separated, its exclusion is an explicit expected failure**
+  and slice 2 still merges; hybrid search is not pulled into this feature (review round 1,
+  finding 1; the alternative, blocking slice 2 on a hybrid slice, was declined for scope).
+- **Duplicates of the same shop and name are allowed** as two offers (review round 1,
+  finding 5; a unique constraint with `409` was declined because #3 wants several batches).
+- **Declined, wrong gate, forwarded to the plan gate:** what the API does when
+  `SEARCH_SIMILARITY_THRESHOLD` is not a float or outside `[-1, 1]` (recommend fail at boot);
+  which fixture row the zero-stock search test sets to zero stock.
 
 - **Proof is one written scenario with an expected ranking**, seeded and asserted at HTTP and
   e2e, reproducible by hand.
