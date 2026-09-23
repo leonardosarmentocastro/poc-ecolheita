@@ -1,5 +1,6 @@
 # Product vector search — slice 3: edit and delete
 
+**Reviewed:** round 1 (2026-09-22).
 **Owns:** Changing and removing a registered product: `PATCH` and `DELETE /products/:id`, re-embedding when the normalised name changes, the edit mode of the product drawer, the delete confirmation dialog, and the row actions on the products table.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. In this repository the orchestrator is `/implement-stack`, which runs the implementer agent on this plan.
@@ -15,7 +16,9 @@
 ## Global Constraints
 
 - Branch `feat/product-vector-search-slice-3` off `feat/product-vector-search-slice-2` (or off the feature branch once slice 2 merged; the handover's stack table decides).
-- `PATCH /products/:id` takes a partial body of `shopName`, `name`, `price`, `quantity`, `discountPercentage`, validated with the same rules as create; re-embeds only when `normalizeForEmbedding(newName) !== normalizeForEmbedding(oldName)`; sets `updatedAt`; 404 when the id is unknown or non-numeric; returns the product with `finalPrice`.
+- **This slice crosses the twenty-file tripwire.** Edit and delete are one capability, "change what I registered": two routes, the drawer's edit mode, the dialog and the row actions are each useless without the others.
+- `PATCH /products/:id` takes a partial body of `shopName`, `name`, `price`, `quantity`, `discountPercentage`, validated with the same rules as create; re-embeds only when `normalizeForEmbedding(newName) !== normalizeForEmbedding(oldName)`; sets `updatedAt` when at least one field is in the body; **an empty body `{}` writes nothing** and returns the current product; 404 when the id is unknown or non-numeric; returns the product with `finalPrice`.
+- **A form is reset when it opens, never while it is open.** The drawer's initial values are memoised on the product being edited, and the form remounts per product (a `key`), so a re-render of the page during a save or a background refetch never wipes what the person typed.
 - `DELETE /products/:id` returns 204, or 404.
 - The repository stays the one write path; resolvers never touch `db`.
 - Duplicates remain allowed; an update never checks uniqueness.
@@ -24,7 +27,7 @@
 
 ## Review Focus
 
-1. A PATCH with an empty body `{}` is a no-op 200 returning the unchanged product, not a 400 and not a re-embed. (Task 1)
+1. A PATCH with an empty body `{}` is a 200 returning the unchanged product, with `updatedAt` untouched, not a 400 and not a re-embed. (Task 1)
 2. A PATCH that only changes the case or spacing of the name keeps the stored vector byte-for-byte. (Task 1)
 3. A PATCH with `price: 4.99` is 400, exactly like create. (Task 1)
 4. Deleting a product twice is 404 the second time, and `GET` after delete is 404. (Task 2)
@@ -39,7 +42,7 @@
 - Modify: `apps/api/src/modules/products/schema.ts`, `apps/api/src/modules/products/repository.ts`, `apps/api/src/modules/products/resolvers/index.ts`, `apps/api/src/modules/products/routes.ts`
 
 **Interfaces:**
-- Consumes: `productsRepository.findById`, `findEmbedding`, `search`; `embed`, `normalizeForEmbedding`; `PRODUCT_PUBLIC_COLUMNS`; `toProduct`; `seedBananaScenario`.
+- Consumes: `productsRepository.findById`, `findEmbedding`, `search`; `embed`, `normalizeForEmbedding`; `PRODUCT_PUBLIC_COLUMNS`; `toProduct`.
 - Produces: `updateProductSchema`, `UpdateProductInput` (all fields optional); `productsRepository.update(id: number, input: UpdateProductInput): Promise<Product | undefined>`; route `PATCH /products/:id`.
 
 - [ ] **Step 1: Write the failing tests**
@@ -79,12 +82,14 @@ describe("PATCH /products/:id", () => {
     expect(body).not.toHaveProperty("embedding");
   });
 
-  it("an empty body is a no-op 200", async () => {
+  it("an empty body writes nothing: 200, same product, same updatedAt, same vector", async () => {
     const created = await create(base);
     const before = await productsRepository.findEmbedding(created.id);
     const res = await patch(base, created.id, {});
     expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ id: created.id, name: "Banana prata", finalPrice: 350 });
+    const body = await res.json();
+    expect(body).toMatchObject({ id: created.id, name: "Banana prata", finalPrice: 350 });
+    expect(body.updatedAt).toBe(created.updatedAt);
     expect(await productsRepository.findEmbedding(created.id)).toEqual(before);
   });
 
@@ -154,6 +159,8 @@ export type UpdateProductInput = z.infer<typeof updateProductSchema>;
    */
   async update(id: number, input: UpdateProductInput): Promise<Product | undefined> {
     if (!Number.isInteger(id)) return undefined;
+    // An empty body changes nothing, so it writes nothing: no updatedAt bump, no re-embed.
+    if (Object.keys(input).length === 0) return this.findById(id);
     const [current] = await db.select({ name: products.name }).from(products).where(eq(products.id, id));
     if (!current) return undefined;
 
@@ -517,12 +524,15 @@ export interface ProductFormProps {
 }
 ```
 
-Replace the reset effect with:
+Replace the reset effect with one that runs on the open transition only. `initialValues` is deliberately left out of the dependency list: a form is reset when it opens, never while it is open (Global Constraints), and the container gives the form a `key` per product so switching products remounts it.
 
 ```tsx
   useEffect(() => {
     if (opened) reset(initialValues ?? EMPTY);
-  }, [opened, initialValues, reset]);
+    // A form is reset when it opens, never while it is open; `initialValues` is read at
+    // that moment only. The container remounts the form per product with a `key`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [opened, reset]);
 ```
 
 and `title="Novo produto"` on the `Drawer` with `title={title}`. Update `ProductsPageContainer` to pass `title="Novo produto"` (edit wiring comes in Task 5).
@@ -737,7 +747,7 @@ export function DeleteProductDialog({ product, deleting, onConfirm, onClose }: D
 cd apps/web && pnpm test:stories && pnpm typecheck && pnpm lint
 ```
 
-Expected: PASS (the container does not compile until Task 5 passes the new props; if `typecheck` is red only there, continue to Task 5 before committing, or pass no-op handlers now).
+Expected: PASS for the stories. `pnpm typecheck` is red at the container, because `onEdit` and `onDelete` are required and Task 5 wires them; lefthook runs the typecheck on commit, so in this task pass no-op handlers in `ProductsPageContainer` (`onEdit={() => {}} onDelete={() => {}}`) and run the typecheck again before committing. Task 5 replaces them.
 
 - [ ] **Step 5: Commit**
 
@@ -774,13 +784,18 @@ async function seedScenario(request: APIRequestContext) {
 test("renaming Banana to Maçã takes it out of the banana results", async ({ page, request }) => {
   await seedScenario(request);
   await page.goto("/produtos");
-  await page.getByRole("button", { name: "Editar Banana" }).click();
+  // Role names match substrings, so "Editar Banana" also matches "Editar Banana prata";
+  // `exact` keeps strict mode to one button.
+  await page.getByRole("button", { name: "Editar Banana", exact: true }).click();
   const drawer = page.getByRole("dialog", { name: "Editar produto" });
   await expect(drawer.getByLabel("Nome do produto")).toHaveValue("Banana");
   await drawer.getByLabel("Nome do produto").fill("Maçã");
   await drawer.getByRole("button", { name: "Salvar" }).click();
   await expect(drawer).toBeHidden();
-  await expect(page.getByRole("row", { name: /Maçã/ })).toContainText("Mercadinho Candelária");
+  // "Maçã argentina" is also a row; filter by the shop to name exactly one.
+  const renamed = page.getByRole("row").filter({ hasText: "Mercadinho Candelária" }).filter({ hasText: "Maçã" });
+  await expect(renamed).toHaveCount(1);
+  await expect(renamed).not.toContainText("argentina");
 
   await page.goto("/buscar");
   await page.getByRole("searchbox", { name: "Nome do produto" }).fill("banana");
@@ -817,7 +832,7 @@ Expected: FAIL (no "Editar Banana" button on the page yet, since the container p
 ```tsx
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@mantine/core";
 import { notify } from "@/lib/notify";
 import { DeleteProductDialog } from "@/modules/products/components/DeleteProductDialog";
@@ -838,6 +853,8 @@ export function ProductsPageContainer() {
   const [editing, setEditing] = useState<Product | null>(null);
   const [deleting, setDeleting] = useState<Product | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  // Stable per product: the form reads it once, when it opens (Global Constraints).
+  const initialValues = useMemo(() => (editing ? toProductFormValues(editing) : undefined), [editing]);
 
   const openNew = () => {
     setEditing(null);
@@ -889,9 +906,12 @@ export function ProductsPageContainer() {
         onDelete={setDeleting}
       />
       <ProductForm
+        // A new product or a different product remounts the form, so its values are
+        // read once, on open, and never wiped by a re-render of this page.
+        key={editing?.id ?? "new"}
         opened={formOpen}
         title={editing ? "Editar produto" : "Novo produto"}
-        initialValues={editing ? toProductFormValues(editing) : undefined}
+        initialValues={initialValues}
         onClose={() => setFormOpen(false)}
         onSubmit={submit}
         pending={create.isPending || update.isPending}

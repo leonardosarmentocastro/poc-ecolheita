@@ -1,5 +1,6 @@
 # Product vector search — slice 1: register and list
 
+**Reviewed:** round 1 (2026-09-22).
 **Owns:** Registering a product and seeing it listed: the monorepo scaffold copied from treasury-2, pgvector Postgres, the `products` table, `POST` and `GET /products` (list and by id), the products page with its table and create drawer, the API, story and e2e harnesses, CI, and the durable docs (`AGENTS.md` local gates, `CONTEXT.md`, the two app `AGENTS.md`).
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. In this repository the orchestrator is `/implement-stack`, which runs the implementer agent on this plan.
@@ -321,7 +322,7 @@ git commit -m "chore: pnpm workspace, turbo and pgvector postgres"
 **Interfaces:**
 - Produces: `createApp(): Express` from `@/server/server`; `startServer()` / `stopServer()` from `@test/helpers`; `db` and `pool` from `@/db/client`; `NotFoundError` from `@/db/data/errors`; `products` table from `@/modules/products/model`.
 
-The products model and its migration are created here because the test harness migrates on setup and Drizzle's migrator needs at least one migration to exist. The model's behaviour is proven in Task 3.
+The products model and its migration are created here because the test harness migrates on setup and Drizzle's migrator needs at least one migration to exist. The model's behaviour is proven in Task 3. This task takes HITL's "no test runner yet" allowance: the harness and the server skeleton are written together, and the health and error-handler tests are written and run red (Steps 7 and 8) before the code that makes them pass (Steps 9 and 10).
 
 - [ ] **Step 1: Write `apps/api/package.json`**
 
@@ -511,7 +512,157 @@ export const products = pgTable("products", {
 });
 ```
 
-- [ ] **Step 5: Write the server**
+- [ ] **Step 5: Write the test harness**
+
+`test/global-setup.ts`:
+
+```ts
+import { drizzle } from "drizzle-orm/node-postgres";
+import { migrate } from "drizzle-orm/node-postgres/migrator";
+import { Pool } from "pg";
+
+export default async function setup(): Promise<void> {
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  await migrate(drizzle(pool), { migrationsFolder: "./drizzle" });
+  await pool.end();
+}
+```
+
+`test/setup.ts`:
+
+```ts
+import { afterAll, beforeEach } from "vitest";
+import { pool } from "@/db/client";
+
+beforeEach(async () => {
+  await pool.query("TRUNCATE TABLE products RESTART IDENTITY CASCADE");
+});
+
+afterAll(async () => {
+  await pool.end();
+});
+```
+
+`test/helpers.ts`:
+
+```ts
+import type { Server } from "node:http";
+import type { AddressInfo } from "node:net";
+import { createApp } from "@/server/server";
+
+export const startServer = async (): Promise<{ server: Server; base: string }> => {
+  const server = createApp().listen(0);
+  await new Promise((resolve) => server.once("listening", resolve));
+  const { port } = server.address() as AddressInfo;
+  return { server, base: `http://localhost:${port}` };
+};
+
+export const stopServer = (server: Server): Promise<void> =>
+  new Promise((resolve) => server.close(() => resolve()));
+
+export const json = (base: string, path: string, init?: RequestInit) =>
+  fetch(`${base}${path}`, {
+    ...init,
+    headers: { "content-type": "application/json", ...(init?.headers ?? {}) },
+  });
+```
+
+- [ ] **Step 6: Generate the first migration**
+
+```bash
+cd apps/api && pnpm install && pnpm db:generate
+ls drizzle
+```
+
+Expected: one `0000_<name>.sql` creating `products` and a `meta/` folder. Open the SQL and confirm the eight columns.
+
+- [ ] **Step 7: Write the failing health and error-handler tests**
+
+`src/modules/health/__tests__/health.api.test.ts`:
+
+```ts
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { Server } from "node:http";
+import { startServer, stopServer } from "@test/helpers";
+
+describe("GET /health", () => {
+  let server: Server;
+  let base: string;
+
+  beforeAll(async () => {
+    ({ server, base } = await startServer());
+  });
+  afterAll(async () => {
+    await stopServer(server);
+  });
+
+  it("returns ok", async () => {
+    const res = await fetch(`${base}/health`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ status: "ok" });
+  });
+});
+```
+
+`src/server/middlewares/__tests__/error-handler-middleware.test.ts`:
+
+```ts
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { Server } from "node:http";
+import { startServer, stopServer } from "@test/helpers";
+
+describe("error handler", () => {
+  let server: Server;
+  let base: string;
+
+  beforeAll(async () => {
+    ({ server, base } = await startServer());
+  });
+  afterAll(async () => {
+    await stopServer(server);
+  });
+
+  it("maps a malformed JSON body to 400 invalid_json", async () => {
+    const res = await fetch(`${base}/test/middlewares/json`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{ not json",
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe("invalid_json");
+  });
+
+  it("maps a ZodError to 400 validation_error with issues", async () => {
+    const res = await fetch(`${base}/test/middlewares/zod-error`);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("validation_error");
+    expect(Array.isArray(body.issues)).toBe(true);
+  });
+
+  it("maps NotFoundError to 404", async () => {
+    const res = await fetch(`${base}/test/middlewares/not-found`);
+    expect(res.status).toBe(404);
+    expect((await res.json()).error).toBe("resource not found");
+  });
+
+  it("maps anything else to 500", async () => {
+    const res = await fetch(`${base}/test/middlewares/boom`);
+    expect(res.status).toBe(500);
+    expect((await res.json()).error).toBe("internal_server_error");
+  });
+});
+```
+
+- [ ] **Step 8: Run the tests to verify they fail**
+
+```bash
+cd apps/api && pnpm test
+```
+
+Expected: FAIL — `@/server/server` does not exist yet, so `startServer` cannot import `createApp`.
+
+- [ ] **Step 9: Write the server**
 
 `src/server/server.ts`:
 
@@ -640,7 +791,7 @@ export const connectRoutes = (app: Express): void => {
 };
 ```
 
-- [ ] **Step 6: Write the health module**
+- [ ] **Step 10: Write the health module**
 
 `src/modules/health/routes.ts`:
 
@@ -669,157 +820,17 @@ export const getHealthResolver = (_req: Request, res: Response): void => {
 };
 ```
 
-- [ ] **Step 7: Write the test harness**
-
-`test/global-setup.ts`:
-
-```ts
-import { drizzle } from "drizzle-orm/node-postgres";
-import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { Pool } from "pg";
-
-export default async function setup(): Promise<void> {
-  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-  await migrate(drizzle(pool), { migrationsFolder: "./drizzle" });
-  await pool.end();
-}
-```
-
-`test/setup.ts`:
-
-```ts
-import { afterAll, beforeEach } from "vitest";
-import { pool } from "@/db/client";
-
-beforeEach(async () => {
-  await pool.query("TRUNCATE TABLE products RESTART IDENTITY CASCADE");
-});
-
-afterAll(async () => {
-  await pool.end();
-});
-```
-
-`test/helpers.ts`:
-
-```ts
-import type { Server } from "node:http";
-import type { AddressInfo } from "node:net";
-import { createApp } from "@/server/server";
-
-export const startServer = async (): Promise<{ server: Server; base: string }> => {
-  const server = createApp().listen(0);
-  await new Promise((resolve) => server.once("listening", resolve));
-  const { port } = server.address() as AddressInfo;
-  return { server, base: `http://localhost:${port}` };
-};
-
-export const stopServer = (server: Server): Promise<void> =>
-  new Promise((resolve) => server.close(() => resolve()));
-
-export const json = (base: string, path: string, init?: RequestInit) =>
-  fetch(`${base}${path}`, {
-    ...init,
-    headers: { "content-type": "application/json", ...(init?.headers ?? {}) },
-  });
-```
-
-- [ ] **Step 8: Generate the first migration**
+- [ ] **Step 11: Run the tests to verify they pass; migrate the dev database**
 
 ```bash
-cd apps/api && pnpm install && pnpm db:generate
-ls drizzle
+cd apps/api && pnpm test && pnpm typecheck && pnpm lint
+pnpm db:migrate
+psql postgres://ecolheita:ecolheita@localhost:5432/ecolheita -c "\\d products"
 ```
 
-Expected: one `0000_<name>.sql` creating `products` and a `meta/` folder. Open the SQL and confirm the eight columns.
+Expected: both test files green; `db:migrate` applies `0000_*` to the dev `ecolheita` database (the test harness migrates only `ecolheita_test`, the e2e setup only `ecolheita_e2e`), and `\d products` lists the eight columns. Every later migration is applied to the dev database the same way, right after it is generated.
 
-- [ ] **Step 9: Write the failing health and error-handler tests**
-
-`src/modules/health/__tests__/health.api.test.ts`:
-
-```ts
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { Server } from "node:http";
-import { startServer, stopServer } from "@test/helpers";
-
-describe("GET /health", () => {
-  let server: Server;
-  let base: string;
-
-  beforeAll(async () => {
-    ({ server, base } = await startServer());
-  });
-  afterAll(async () => {
-    await stopServer(server);
-  });
-
-  it("returns ok", async () => {
-    const res = await fetch(`${base}/health`);
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ status: "ok" });
-  });
-});
-```
-
-`src/server/middlewares/__tests__/error-handler-middleware.test.ts`:
-
-```ts
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { Server } from "node:http";
-import { startServer, stopServer } from "@test/helpers";
-
-describe("error handler", () => {
-  let server: Server;
-  let base: string;
-
-  beforeAll(async () => {
-    ({ server, base } = await startServer());
-  });
-  afterAll(async () => {
-    await stopServer(server);
-  });
-
-  it("maps a malformed JSON body to 400 invalid_json", async () => {
-    const res = await fetch(`${base}/test/middlewares/json`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: "{ not json",
-    });
-    expect(res.status).toBe(400);
-    expect((await res.json()).error).toBe("invalid_json");
-  });
-
-  it("maps a ZodError to 400 validation_error with issues", async () => {
-    const res = await fetch(`${base}/test/middlewares/zod-error`);
-    expect(res.status).toBe(400);
-    const body = await res.json();
-    expect(body.error).toBe("validation_error");
-    expect(Array.isArray(body.issues)).toBe(true);
-  });
-
-  it("maps NotFoundError to 404", async () => {
-    const res = await fetch(`${base}/test/middlewares/not-found`);
-    expect(res.status).toBe(404);
-    expect((await res.json()).error).toBe("resource not found");
-  });
-
-  it("maps anything else to 500", async () => {
-    const res = await fetch(`${base}/test/middlewares/boom`);
-    expect(res.status).toBe(500);
-    expect((await res.json()).error).toBe("internal_server_error");
-  });
-});
-```
-
-- [ ] **Step 10: Run the tests; make them pass**
-
-```bash
-cd apps/api && pnpm test
-```
-
-Expected: both files green (the code was written in steps 5 and 6; if anything is red, fix the code, not the test). Then `pnpm typecheck && pnpm lint` in `apps/api`.
-
-- [ ] **Step 11: Commit**
+- [ ] **Step 12: Commit**
 
 ```bash
 git add apps/api
@@ -1342,7 +1353,11 @@ Change the `## Local gates` section body (inside the `hitl:knob local-gates` blo
 ```markdown
 ## Local gates
 
-Run before a PR opens (prereqs: `pnpm db:up`, `pnpm e2e:install`):
+Local setup, once per clone: `pnpm install`, `pnpm db:up`, `pnpm --filter api db:migrate`
+(the dev `ecolheita` database; the test and e2e harnesses migrate their own databases),
+`pnpm e2e:install`.
+
+Run before a PR opens:
 
 - `pnpm test` — API suite (Vitest over HTTP, real Postgres, real embedding model) and web unit suite.
 - `pnpm test:stories` — every story's `play()` in headless Chromium.
@@ -1955,6 +1970,9 @@ export const productsAPI = {
 `utils/format-brl.ts`:
 
 ```ts
+// `toLocaleString` separates "R$" from the amount with a NON-BREAKING space (U+00A0).
+// The replace turns it into a plain space so "R$ 3,50" in a test matches byte for byte.
+// Write the escape ` ` literally; do not paste a visible space into the pattern.
 export const formatBRL = (cents: number): string =>
   (cents / 100)
     .toLocaleString("pt-BR", { style: "currency", currency: "BRL" })

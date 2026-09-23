@@ -1,5 +1,6 @@
 # Product vector search — slice 2: search by meaning
 
+**Reviewed:** round 1 (2026-09-22).
 **Owns:** Finding the same product across shops by meaning and ranking it by best price: the embedding module and model loaded at boot, the pgvector extension and `embedding` column, embedding on create, `GET /products/search`, the similarity threshold, the banana fixture, the seed script, the similarity table, the search page, and the search rules appended to `CONTEXT.md`.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. In this repository the orchestrator is `/implement-stack`, which runs the implementer agent on this plan.
@@ -15,6 +16,9 @@
 ## Global Constraints
 
 - Branch `feat/product-vector-search-slice-2` off `feat/product-vector-search-slice-1` (or off the feature branch once slice 1 merged; the handover's stack table decides).
+- **This slice crosses the twenty-file tripwire.** The embedding module, the migration, the fixture, the seed, the search endpoint and the four search components are one capability, "find the same product by meaning"; a cut anywhere in it leaves a slice with nothing a shopper can see.
+- Every migration this slice generates is also applied to the dev database with `pnpm --filter api db:migrate` right after it is generated, so `pnpm seed` and the by-hand demo work.
+- A form or a page keeps what the person has on screen: search failure keeps the previous cards.
 - Model `Xenova/paraphrase-multilingual-MiniLM-L12-v2`, quantised (`dtype: "q8"`), mean pooling, normalised output, 384 numbers. Files cached under `apps/api/.models/` (gitignored). **The real model runs in tests**; never mock `embed`.
 - Embedded text: the **normalised name only** (trim, lowercase, collapse whitespace). Never the shop name.
 - The products repository is the one write path: `create` embeds. Resolvers, seed and tests never insert into `products` directly.
@@ -32,7 +36,7 @@
 2. A query that is only whitespace is 400, not an empty 200 list. (Task 5)
 3. A product with stock 0 that would otherwise be the cheapest banana is absent from search but still present in `GET /products`. (Task 5)
 4. Two products with the same final price come back in a stable order: higher similarity first, then lower id. (Task 5)
-5. Search while the API is down shows an inline error and keeps the previous results on screen. (Task 9, story `FailedKeepsPreviousResults`)
+5. Search while the API is down shows an inline error and keeps the previous results on screen. (Task 9, story `FailedKeepsPreviousResults` for the component; Task 10, e2e "a failed search keeps the previous results" for the wired page)
 
 ---
 
@@ -243,6 +247,10 @@ describe("envSchema", () => {
   it.each(["abc", "1.5", "-2"])("refuses %s so the boot fails", (value) => {
     expect(() => envSchema.parse({ ...base, SEARCH_SIMILARITY_THRESHOLD: value })).toThrow();
   });
+  it("treats an empty value as unset (the default), never as 0", () => {
+    const parsed = envSchema.parse({ ...base, SEARCH_SIMILARITY_THRESHOLD: "" });
+    expect(parsed.SEARCH_SIMILARITY_THRESHOLD).toBe(envSchema.parse(base).SEARCH_SIMILARITY_THRESHOLD);
+  });
 });
 ```
 
@@ -265,8 +273,12 @@ export const envSchema = z.object({
   DATABASE_URL: z.url(),
   PORT: z.coerce.number().default(3333),
   // Cosine similarity floor for a search match (CONTEXT.md). Default chosen from the
-  // banana scenario's similarity table — see the slice 2 pull request.
-  SEARCH_SIMILARITY_THRESHOLD: z.coerce.number().min(-1).max(1).default(0.6),
+  // banana scenario's similarity table — see the slice 2 pull request. An empty value
+  // (`SEARCH_SIMILARITY_THRESHOLD=` in a .env) is unset, never 0.
+  SEARCH_SIMILARITY_THRESHOLD: z.preprocess(
+    (v) => (v === "" ? undefined : v),
+    z.coerce.number().min(-1).max(1).default(0.6),
+  ),
 });
 
 export const env = envSchema.parse(process.env);
@@ -283,9 +295,24 @@ await loadEmbeddingModel();
 console.log("embedding model ready");
 ```
 
-Add `SEARCH_SIMILARITY_THRESHOLD=0.6` to both `.env.example` files (the value is revisited in Task 7).
+Add to both `.env.example` files a commented line, so a local `.env` copied from it does not pin a value that drifts from the calibrated default the tests use:
 
-- [ ] **Step 4: Run the test and boot the server once**
+```
+# Cosine similarity floor for search; unset means the API's calibrated default.
+# SEARCH_SIMILARITY_THRESHOLD=0.6
+```
+
+- [ ] **Step 4: Give the e2e API server time to load the model**
+
+In `e2e/playwright.config.ts`, the API `webServer` entry (copied in slice 1) has no `timeout`, so Playwright's 60-second default applies. From this slice the boot loads the model, and on a cold cache first downloads roughly 120 MB. Add to that entry, with the comment:
+
+```ts
+      // The API loads the embedding model before it listens; a cold model cache also
+      // downloads it. Three minutes covers both on a runner.
+      timeout: 180_000,
+```
+
+- [ ] **Step 5: Run the test and boot the server once**
 
 ```bash
 cd apps/api && pnpm vitest run src/config/__tests__/env.test.ts && pnpm typecheck
@@ -294,10 +321,10 @@ SEARCH_SIMILARITY_THRESHOLD=abc pnpm start; echo "exit=$?"
 
 Expected: PASS; the second command prints a Zod error and a non-zero exit before "api listening".
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add apps/api .env.example
+git add apps/api .env.example e2e/playwright.config.ts
 git commit -m "feat(api): load embedding model at boot; SEARCH_SIMILARITY_THRESHOLD"
 ```
 
@@ -377,6 +404,15 @@ ALTER TABLE "products" ADD COLUMN "embedding" vector(384) NOT NULL;
 ```
 
 The truncate is deliberate (spec § Delivery slices): no environment carries slice 1 data that must survive, and a `NOT NULL` column cannot be added to a non-empty table without a default.
+
+Apply it to the dev database now, so `pnpm seed` (Task 4) and the by-hand demo have the column:
+
+```bash
+cd apps/api && pnpm db:migrate
+psql postgres://ecolheita:ecolheita@localhost:5432/ecolheita -c "\d products"
+```
+
+Expected: `embedding | vector(384) | not null` in the listing.
 
 - [ ] **Step 4: Public columns, repository write path, types**
 
@@ -681,9 +717,11 @@ describe("GET /products/search", () => {
 
   it("hides zero-stock products from search but not from the list", async () => {
     const soldOut = await create(base, { name: "Banana", price: 100, quantity: 0 });
-    await create(base, { name: "Banana prata" });
+    const inStock = await create(base, { name: "Banana prata" });
     const hits = await (await fetch(`${base}/products/search?q=banana`)).json();
-    expect(hits.map((h: { id: number }) => h.id)).not.toContain(soldOut.id);
+    const ids = hits.map((h: { id: number }) => h.id);
+    expect(ids).toContain(inStock.id); // the filter hides stock 0, not everything
+    expect(ids).not.toContain(soldOut.id);
     const list = await (await fetch(`${base}/products`)).json();
     expect(list.map((p: { id: number }) => p.id)).toContain(soldOut.id);
   });
@@ -943,7 +981,7 @@ From Task 6's output, note the lowest similarity among the four bananas (`min_ma
 - If only "Bolo de banana" sits above `min_match` (the other three decoys below): default = the midpoint between the highest of those three and `min_match`; change the third scenario test to `it.fails` and keep its body. The hard tier stays green.
 - If bananada, maçã or carne moída cannot be separated from the four bananas by any threshold: stop. This is a design change (spec § Terminal states); report it with the table.
 
-Write the value into `env.ts`'s `.default(...)` and both `.env.example` files.
+Write the value into `env.ts`'s `.default(...)` and into the commented line of both `.env.example` files.
 
 - [ ] **Step 3: Run the suite**
 
@@ -1491,6 +1529,16 @@ test.describe("searching for banana", () => {
     expect(names).toEqual(EXPECTED_MATCH_KEYS_IN_ORDER.map((k) => scenarioRow(k).name));
     expect(names).not.toContain(scenarioRow(SOFT_DECOY_KEY).name);
   });
+
+  test("a failed search shows an error and keeps the previous results", async ({ page }) => {
+    const before = await page.getByRole("article").count();
+    expect(before).toBeGreaterThanOrEqual(4);
+    await page.route("**/products/search**", (route) => route.abort());
+    await page.getByRole("searchbox", { name: "Nome do produto" }).fill("maçã");
+    await page.getByRole("button", { name: "Buscar" }).click();
+    await expect(page.getByRole("alert")).toHaveText("Não foi possível buscar. Tente novamente.");
+    await expect(page.getByRole("article")).toHaveCount(before);
+  });
 });
 ```
 
@@ -1509,15 +1557,23 @@ Expected: FAIL (the placeholder page has no search box).
 ```tsx
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { SearchForm } from "@/modules/products/components/SearchForm";
 import { SearchResults } from "@/modules/products/components/SearchResults";
 import { useProductSearch } from "@/modules/products/hooks/use-product-search";
+import type { SearchResult } from "@/modules/products/types";
 
 /** Container: owns the submitted query and the fetch; renders the presentational pieces. No story. */
 export function SearchPageContainer() {
   const [query, setQuery] = useState("");
   const { data, isFetching, error } = useProductSearch(query);
+  // `keepPreviousData` only bridges the pending state; once a query settles as an error,
+  // `data` is undefined. The last good list is kept here so a failure keeps the cards on
+  // screen (spec § Web, search page states).
+  const [lastResults, setLastResults] = useState<SearchResult[]>([]);
+  useEffect(() => {
+    if (data !== undefined) setLastResults(data);
+  }, [data]);
 
   return (
     <main className="container mx-auto max-w-3xl p-4 sm:p-8">
@@ -1526,7 +1582,7 @@ export function SearchPageContainer() {
         <SearchForm onSearch={setQuery} />
         <SearchResults
           query={query}
-          results={data ?? []}
+          results={data ?? lastResults}
           loading={isFetching}
           error={error ? "Não foi possível buscar. Tente novamente." : null}
         />
