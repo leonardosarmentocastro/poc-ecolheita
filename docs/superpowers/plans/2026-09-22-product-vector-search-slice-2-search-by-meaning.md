@@ -5,7 +5,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. In this repository the orchestrator is `/implement-stack`, which runs the implementer agent on this plan.
 
-**Goal:** Searching "banana" returns the four differently named bananas from four shops, cheapest first, and none of the decoys, over HTTP and in the browser.
+**Goal:** Searching "banana" returns the four differently named bananas from four shops and the bananada, cheapest first, and none of the decoys, over HTTP and in the browser.
 
 **Architecture:** One in-process embedding module (Transformers.js, `Xenova/paraphrase-multilingual-MiniLM-L12-v2`, 384 dimensions) behind `loadEmbeddingModel()` / `embed()` / `normalizeForEmbedding()`. The products repository's `create` embeds the normalised name into a `vector(384)` column. A search resolver embeds the query and runs one Drizzle query ordered by final price, filtered by cosine similarity against a threshold read from the environment. The web search page renders the results as cards.
 
@@ -16,6 +16,7 @@
 ## Global Constraints
 
 - Branch `feat/product-vector-search-slice-2` off `feat/product-vector-search-slice-1` (or off the feature branch once slice 1 merged; the handover's stack table decides).
+- **Design change, 2026-09-23 (spec § Decisions): "Bananada" is a match, not a hard decoy.** Tasks 1–6 were committed before it; the fixture from Task 4 is amended in Task 7 Step 0. `CONTEXT.md`'s sentence "\"Bananada\" and \"bolo de banana\" are different products" is reworded in Task 7 to say a product made of banana, such as bananada, counts as a match, while "bolo de banana" is the known hard case.
 - **This slice crosses the twenty-file tripwire.** The embedding module, the migration, the fixture, the seed, the search endpoint and the four search components are one capability, "find the same product by meaning"; a cut anywhere in it leaves a slice with nothing a shopper can see.
 - Every migration this slice generates is also applied to the dev database with `pnpm --filter api db:migrate` right after it is generated, so `pnpm seed` and the by-hand demo work.
 - A form or a page keeps what the person has on screen: search failure keeps the previous cards.
@@ -568,16 +569,17 @@ export const BANANA_SCENARIO: readonly ScenarioRow[] = [
 
 export const BANANA_QUERY = "banana";
 
-/** Hard tier: these four, in this order (final price 1,60 · 3,00 · 3,50 · 3,60). */
+/** Hard tier: these five, in this order (final price 1,60 · 2,40 · 3,00 · 3,50 · 3,60). */
 export const EXPECTED_MATCH_KEYS_IN_ORDER = [
   "ceasa-banana-prata-organica",
+  "candelaria-bananada",
   "candelaria-banana",
   "vec-banana-prata",
   "sao-jose-banana-nanica",
 ];
 
 /** Hard tier: never in the results. */
-export const HARD_DECOY_KEYS = ["candelaria-bananada", "vec-maca-argentina", "ceasa-carne-moida"];
+export const HARD_DECOY_KEYS = ["vec-maca-argentina", "ceasa-carne-moida"];
 
 /** Expected-failure candidate: absent if the threshold can separate it. */
 export const SOFT_DECOY_KEY = "sao-jose-bolo-de-banana";
@@ -930,6 +932,10 @@ git commit -m "chore(api): similarity table CLI for threshold calibration"
 
 The threshold and the test that guards it are written together, so no commit carries a known-red test.
 
+- [ ] **Step 0: Amend the fixture and `CONTEXT.md` for the design change**
+
+In `fixtures/banana-scenario.ts`, make `EXPECTED_MATCH_KEYS_IN_ORDER` and `HARD_DECOY_KEYS` match the Task 4 listing above (bananada second among the matches, two hard decoys). In `CONTEXT.md`, reword the "Same product across shops" bullet: a product made of banana, such as "Bananada", counts as a match for "banana"; "bolo de banana" is the known hard case. Commit `test(api): bananada is a match in the banana scenario`.
+
 - [ ] **Step 1: Print the tables**
 
 ```bash
@@ -937,13 +943,13 @@ cd apps/api && pnpm similarity
 cd apps/api && pnpm similarity maçã
 ```
 
-From the first table note the lowest similarity among the four bananas (`min_match`) and the highest among the three hard decoys (bananada, maçã argentina, carne moída), and separately the similarity of "Bolo de banana". From the second table note the similarity of the "Banana" row to the query "maçã": slice 3 renames "Banana" to "Maçã" and expects it to leave the banana results, so bare "maçã" is one more value the default must exceed. `max_decoy` is the highest of the three hard decoys and the "maçã"-vs-"Banana" value.
+From the first table note the lowest similarity among the five matches (`min_match`) and the highest among the two hard decoys (maçã argentina, carne moída), and separately the similarity of "Bolo de banana". From the second table note the similarity of the "Banana" row to the query "maçã": slice 3 renames "Banana" to "Maçã" and expects it to leave the banana results, so bare "maçã" is one more value the default must exceed. `max_decoy` is the highest of the two hard decoys and the "maçã"-vs-"Banana" value.
 
 - [ ] **Step 2: Choose the default**
 
 - If `max_decoy < min_match` and "Bolo de banana" is also below `min_match`: default = the midpoint between `max_decoy` and `min_match`, rounded to two decimals. All scenario assertions will pass.
 - If only "Bolo de banana" sits above `min_match`: default = the midpoint between `max_decoy` and `min_match`; the third scenario test below is written as `it.fails` and keeps its body. The hard tier stays green.
-- If a hard decoy, or "maçã" against "Banana", cannot be separated from the four bananas by any threshold: stop. This is a design change (spec § Terminal states); report it with both tables. If it is the "maçã" case, the spec's slice 3 proof wording is what needs the decision.
+- If a hard decoy, or "maçã" against "Banana", cannot be separated from the five matches by any threshold: stop. This is a design change (spec § Terminal states); report it with both tables. If it is the "maçã" case, the spec's slice 3 proof wording is what needs the decision.
 
 Write the value into `env.ts`'s `.default(...)` and into the commented line of both `.env.example` files.
 
@@ -992,19 +998,19 @@ describe("the banana scenario", () => {
     hits = await (await fetch(`${base}/products/search?q=${encodeURIComponent(BANANA_QUERY)}`)).json();
   });
 
-  it("hard: the first four results are the four bananas, cheapest first", () => {
-    expect(hits.slice(0, 4).map((h) => h.id)).toEqual(EXPECTED_MATCH_KEYS_IN_ORDER.map(idOf));
+  it("hard: the first five results are the five matches, cheapest first", () => {
+    expect(hits.slice(0, EXPECTED_MATCH_KEYS_IN_ORDER.length).map((h) => h.id)).toEqual(EXPECTED_MATCH_KEYS_IN_ORDER.map(idOf));
   });
 
-  it("hard: bananada, maçã and carne moída are absent", () => {
+  it("hard: maçã and carne moída are absent", () => {
     const ids = hits.map((h) => h.id);
     for (const key of HARD_DECOY_KEYS) expect(ids).not.toContain(idOf(key));
   });
 
-  // If Task 7's similarity table shows no threshold keeps all four bananas and excludes
+  // If Task 7's similarity table shows no threshold keeps all five matches and excludes
   // "bolo de banana", change `it` to `it.fails` and paste the table in the PR body
   // (spec § The proof scenario, expected-failure candidate).
-  it("bolo de banana is absent, so the list is exactly the four bananas", () => {
+  it("bolo de banana is absent, so the list is exactly the five matches", () => {
     expect(hits.map((h) => h.id)).toEqual(EXPECTED_MATCH_KEYS_IN_ORDER.map(idOf));
     expect(hits.map((h) => h.id)).not.toContain(idOf(SOFT_DECOY_KEY));
   });
@@ -1546,16 +1552,16 @@ test.describe("searching for banana", () => {
     await expect(page.getByRole("article").first()).toBeVisible();
   });
 
-  test("hard: the four bananas come first, cheapest first, and the hard decoys are absent", async ({ page }) => {
+  test("hard: the five matches come first, cheapest first, and the hard decoys are absent", async ({ page }) => {
     const names = await page.getByRole("article").evaluateAll((els) => els.map((el) => el.getAttribute("aria-label")));
-    expect(names.slice(0, 4)).toEqual(EXPECTED_MATCH_KEYS_IN_ORDER.map((k) => scenarioRow(k).name));
+    expect(names.slice(0, EXPECTED_MATCH_KEYS_IN_ORDER.length)).toEqual(EXPECTED_MATCH_KEYS_IN_ORDER.map((k) => scenarioRow(k).name));
     for (const key of HARD_DECOY_KEYS) expect(names).not.toContain(scenarioRow(key).name);
     await expect(page.getByRole("article").first()).toContainText("R$ 1,60");
   });
 
   // If the similarity table shows "bolo de banana" cannot be separated, add
   // `test.fail();` as the first line of this test and keep its body (spec § The proof scenario).
-  test("bolo de banana is absent, so the list is exactly the four bananas", async ({ page }) => {
+  test("bolo de banana is absent, so the list is exactly the five matches", async ({ page }) => {
     const names = await page.getByRole("article").evaluateAll((els) => els.map((el) => el.getAttribute("aria-label")));
     expect(names).toEqual(EXPECTED_MATCH_KEYS_IN_ORDER.map((k) => scenarioRow(k).name));
     expect(names).not.toContain(scenarioRow(SOFT_DECOY_KEY).name);
