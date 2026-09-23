@@ -11,7 +11,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "test": "vitest run",
-    "seed": "tsx src/db/seed-cli.ts"
+    "seed": "tsx src/db/seed-cli.ts",
+    "similarity": "tsx src/db/similarity-table-cli.ts"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.3.0",
