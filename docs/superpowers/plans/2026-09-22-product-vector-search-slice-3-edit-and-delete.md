@@ -947,3 +947,7 @@ git push -u origin feat/product-vector-search-slice-3
 ```
 
 The PR body (opened by `/implement-stack`) carries `Plan: docs/superpowers/plans/2026-09-22-product-vector-search-slice-3-edit-and-delete.md`.
+
+## Review decisions
+
+- Task 4, `EscapeCancelsAndReturnsFocus` (implementer, 2026-09-23): Mantine's `Modal` closes through a 200 ms transition, so the story's "dialog is gone" and "focus is back on the opener" assertions are wrapped in `waitFor`, as the existing `ProductForm` Escape story does. The acceptance criterion is the same: Escape closes the dialog and focus returns.

@@ -7,3 +7,5 @@ productsRouter.get("/", resolvers.listProductsResolver);
 productsRouter.post("/", resolvers.createProductResolver);
 productsRouter.get("/search", resolvers.searchProductsResolver);
 productsRouter.get("/:id", resolvers.getProductResolver);
+productsRouter.patch("/:id", resolvers.updateProductResolver);
+productsRouter.delete("/:id", resolvers.deleteProductResolver);

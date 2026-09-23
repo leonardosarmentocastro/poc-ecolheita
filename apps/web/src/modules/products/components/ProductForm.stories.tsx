@@ -9,13 +9,20 @@ const meta = {
   // A drawer portals a full-viewport overlay; inline docs would stack one per story.
   parameters: { docs: { story: { inline: false, iframeHeight: "640px" } } },
   tags: ["autodocs"],
-  args: { opened: true, onClose: fn(), onSubmit: fn(async () => {}), pending: false, error: null },
+  args: {
+    opened: true,
+    title: "Novo produto",
+    onClose: fn(),
+    onSubmit: fn(async () => {}),
+    pending: false,
+    error: null,
+  },
 } satisfies Meta<typeof ProductForm>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-const drawer = async () => within(await screen.findByRole("dialog", { name: "Novo produto" }));
+const drawer = async () => within(await screen.findByRole("dialog", { name: /produto/ }));
 
 /** Filling every field and saving submits the API's integers, reais turned into cents. */
 export const SubmitsCentsAndIntegers: Story = {
@@ -94,5 +101,37 @@ export const EscapeCloses: Story = {
     await expect(args.onClose).toHaveBeenCalled();
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     await waitFor(() => expect(trigger).toHaveFocus());
+  },
+};
+
+/** Edit mode opens with the product's values in every field, zero included. */
+export const EditModePrefilled: Story = {
+  args: {
+    title: "Editar produto",
+    initialValues: {
+      shopName: "VEC Hortifruti",
+      name: "Banana prata",
+      priceReais: "5,00",
+      quantity: "10",
+      discountPercentage: "0",
+    },
+  },
+  play: async ({ args }) => {
+    const d = within(await screen.findByRole("dialog", { name: "Editar produto" }));
+    await expect(d.getByLabelText("Loja")).toHaveValue("VEC Hortifruti");
+    await expect(d.getByLabelText("Nome do produto")).toHaveValue("Banana prata");
+    await expect(d.getByLabelText("Preço (R$)")).toHaveValue("5,00");
+    await expect(d.getByLabelText("Quantidade em estoque")).toHaveValue("10");
+    await expect(d.getByLabelText("Desconto (%)")).toHaveValue("0");
+    await userEvent.clear(d.getByLabelText("Nome do produto"));
+    await userEvent.type(d.getByLabelText("Nome do produto"), "Maçã");
+    await userEvent.click(d.getByRole("button", { name: "Salvar" }));
+    await expect(args.onSubmit).toHaveBeenCalledWith({
+      shopName: "VEC Hortifruti",
+      name: "Maçã",
+      price: 500,
+      quantity: 10,
+      discountPercentage: 0,
+    });
   },
 };
