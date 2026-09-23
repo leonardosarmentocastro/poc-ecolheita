@@ -16,4 +16,14 @@ describe("parseReaisToCents", () => {
     expect(parseReaisToCents("")).toBeNull();
     expect(parseReaisToCents("-1")).toBeNull();
   });
+  it("rejects a dot-only amount that reads as a thousands separator", () => {
+    expect(parseReaisToCents("1.234")).toBeNull();
+    expect(parseReaisToCents("10.000")).toBeNull();
+    expect(parseReaisToCents("1.234.567")).toBeNull();
+  });
+  it("rejects more than two decimal digits instead of rounding them away", () => {
+    expect(parseReaisToCents("4,999")).toBeNull();
+    expect(parseReaisToCents("4.9999")).toBeNull();
+    expect(parseReaisToCents("1.234,567")).toBeNull();
+  });
 });
