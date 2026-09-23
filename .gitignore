@@ -7,3 +7,18 @@
 
 # Original Ecolheita app, kept locally as reference material only.
 ecolheita-original-code/
+
+node_modules/
+.env
+.env.local
+dist/
+.next/
+.turbo/
+/e2e/test-results/
+/e2e/playwright-report/
+/e2e/.playwright/
+test-results/
+storybook-static/
+
+# Vitest browser mode writes failure screenshots beside the story file
+__screenshots__/

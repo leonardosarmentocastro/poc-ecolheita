@@ -1,0 +1,35 @@
+{
+  "name": "poc-ecolheita",
+  "private": true,
+  "packageManager": "pnpm@10.33.2",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "e2e": "playwright test --config e2e/playwright.config.ts",
+    "e2e:install": "playwright install chromium",
+    "test:stories": "turbo run test:stories",
+    "storybook": "pnpm --filter web storybook",
+    "prepare": "if [ -z \"$CI\" ]; then lefthook install; fi"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@playwright/test": "^1.62.1",
+    "@types/pg": "^8.20.0",
+    "drizzle-orm": "^0.45.2",
+    "eslint": "^9.39.5",
+    "lefthook": "^2.1.12",
+    "pg": "^8.22.0",
+    "prettier": "^3.9.6",
+    "turbo": "^2.10.7",
+    "typescript-eslint": "^8.65.0",
+    "vitest": "^4.1.10"
+  }
+}

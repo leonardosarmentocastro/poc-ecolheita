@@ -1,0 +1,26 @@
+# Pre-commit only; there is no pre-push hook. Tests stay with the mandated local gates
+# and CI. `prettier` runs first and alone, rewriting and re-staging the staged files, then
+# the parallel group reads them.
+pre-commit:
+  jobs:
+    - name: prettier
+      glob:
+        - "*.{ts,tsx,js,mjs,cjs,json,yml,yaml,css}"
+        - ".prettierrc"
+      run: pnpm prettier --write {staged_files}
+      stage_fixed: true
+
+    - name: checks
+      group:
+        parallel: true
+        jobs:
+          - name: eslint-web
+            root: "apps/web/"
+            glob: "*.{ts,tsx,mjs}"
+            run: pnpm eslint {staged_files}
+          - name: eslint-api
+            root: "apps/api/"
+            glob: "*.ts"
+            run: pnpm eslint {staged_files}
+          - name: typecheck
+            run: pnpm typecheck
