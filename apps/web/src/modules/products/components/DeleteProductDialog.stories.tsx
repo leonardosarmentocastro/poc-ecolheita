@@ -48,12 +48,23 @@ export const ConfirmDeletes: Story = {
   },
 };
 
-/** While deleting, the confirm button is disabled and says so. */
+/**
+ * While deleting, the confirm button is disabled and says so, and nothing closes the
+ * question: Cancel is disabled, and Escape and the backdrop are ignored until the answer.
+ */
 export const Deleting: Story = {
   args: { deleting: true },
-  play: async () => {
+  play: async ({ args }) => {
     const d = await question();
     await expect(d.getByRole("button", { name: "Excluindo…" })).toBeDisabled();
+    await expect(d.getByRole("button", { name: "Cancelar" })).toBeDisabled();
+    await userEvent.keyboard("{Escape}");
+    // Mantine's own backdrop class; the modal portals it outside the canvas.
+    const backdrop = document.querySelector<HTMLElement>(".mantine-Modal-overlay");
+    await expect(backdrop).not.toBeNull();
+    await userEvent.click(backdrop!);
+    await expect(args.onClose).not.toHaveBeenCalled();
+    await expect(screen.getByRole("dialog", { name: "Excluir produto" })).toBeVisible();
   },
 };
 
@@ -85,6 +96,12 @@ export const EscapeCancelsAndReturnsFocus: Story = {
     await question();
     await userEvent.keyboard("{Escape}");
     await expect(args.onClose).toHaveBeenCalled();
+    // The question keeps naming the product while it fades out, never "Excluir “” de ?".
+    await expect(
+      screen.getByText(
+        "Excluir “Banana” de Mercadinho Candelária? Esta ação não pode ser desfeita.",
+      ),
+    ).toBeInTheDocument();
     // The modal closes through a 200 ms transition; wait for it, as the drawer's story does.
     await waitFor(() =>
       expect(screen.queryByRole("dialog", { name: "Excluir produto" })).toBeNull(),
