@@ -9,7 +9,13 @@ import type { SearchResult } from "@/modules/products/types";
 /** Container: owns the submitted query and the fetch; renders the presentational pieces. No story. */
 export function SearchPageContainer() {
   const [query, setQuery] = useState("");
-  const { data, isFetching, error } = useProductSearch(query);
+  const { data, isFetching, error, refetch } = useProductSearch(query);
+  // Submitting the current text again is a state no-op, so react-query would not fetch;
+  // "Tente novamente" must search again, so the same query refetches explicitly.
+  const search = (next: string) => {
+    if (next === query) void refetch();
+    else setQuery(next);
+  };
   // `keepPreviousData` only bridges the pending state; once a query settles as an error,
   // `data` is undefined. The last good list is kept here so a failure keeps the cards on
   // screen (spec § Web, search page states).
@@ -21,7 +27,7 @@ export function SearchPageContainer() {
     <main className="container mx-auto max-w-3xl p-4 sm:p-8">
       <h1 className="mb-6 text-2xl font-bold">Buscar</h1>
       <div className="grid gap-6">
-        <SearchForm onSearch={setQuery} />
+        <SearchForm onSearch={search} />
         <SearchResults
           query={query}
           results={data ?? lastResults}

@@ -67,3 +67,26 @@ test.describe("searching for banana", () => {
     await expect(page.getByRole("article")).toHaveCount(before);
   });
 });
+
+test.describe("retrying a failed search", () => {
+  // "Tente novamente" means pressing Buscar again with the same text must search again.
+  test("pressing Buscar again with the same text after a failure shows the results", async ({
+    request,
+    page,
+  }) => {
+    await seedScenario(request);
+    await page.goto("/buscar");
+    await page.route("**/products/search**", (route) => route.abort());
+    await page.getByRole("searchbox", { name: "Nome do produto" }).fill(BANANA_QUERY);
+    await page.getByRole("button", { name: "Buscar" }).click();
+    // Scoped to the page body: Next's route announcer is a second, empty `alert` region.
+    const alert = page.getByRole("main").getByRole("alert");
+    await expect(alert).toHaveText("Não foi possível buscar. Tente novamente.");
+    await expect(page.getByRole("article")).toHaveCount(0);
+
+    await page.unroute("**/products/search**");
+    await page.getByRole("button", { name: "Buscar" }).click();
+    await expect(alert).toHaveCount(0);
+    await expect(page.getByRole("article").first()).toContainText("R$ 1,60");
+  });
+});
