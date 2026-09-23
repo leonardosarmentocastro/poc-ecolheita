@@ -44,6 +44,8 @@ export function ProductsPageContainer() {
         products={data ?? []}
         loading={isLoading}
         error={error ? "Não foi possível carregar os produtos." : null}
+        onEdit={() => {}}
+        onDelete={() => {}}
       />
       <ProductForm
         opened={formOpen}

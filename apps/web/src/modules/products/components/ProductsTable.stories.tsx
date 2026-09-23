@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
-import { expect, within } from "storybook/test";
+import { expect, fn, userEvent, within } from "storybook/test";
 import { ProductsTable } from "@/modules/products/components/ProductsTable";
 import type { Product } from "@/modules/products/types";
 
@@ -30,7 +30,13 @@ const fullPriceApple: Product = {
 const meta = {
   component: ProductsTable,
   tags: ["autodocs"],
-  args: { products: [bananaPrata, fullPriceApple], loading: false, error: null },
+  args: {
+    products: [bananaPrata, fullPriceApple],
+    loading: false,
+    error: null,
+    onEdit: fn(),
+    onDelete: fn(),
+  },
 } satisfies Meta<typeof ProductsTable>;
 
 export default meta;
@@ -82,5 +88,21 @@ export const Failed: Story = {
     await expect(within(canvasElement).getByRole("alert")).toHaveTextContent(
       "Não foi possível carregar os produtos.",
     );
+  },
+};
+
+/** Each row has an edit and a delete action named after the product, 44 px tall, wired to the handlers. */
+export const RowActions: Story = {
+  play: async ({ canvasElement, args }) => {
+    const table = within(canvasElement).getByRole("table", { name: "Produtos" });
+    const edit = within(table).getByRole("button", { name: "Editar Banana prata" });
+    const del = within(table).getByRole("button", { name: "Excluir Banana prata" });
+    for (const b of [edit, del]) {
+      await expect(b.getBoundingClientRect().height).toBeGreaterThanOrEqual(44);
+    }
+    await userEvent.click(edit);
+    await expect(args.onEdit).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }));
+    await userEvent.click(del);
+    await expect(args.onDelete).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }));
   },
 };
