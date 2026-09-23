@@ -80,16 +80,17 @@ export const BANANA_SCENARIO: readonly ScenarioRow[] = [
 
 export const BANANA_QUERY = "banana";
 
-/** Hard tier: these four, in this order (final price 1,60 · 3,00 · 3,50 · 3,60). */
+/** Hard tier: these five, in this order (final price 1,60 · 2,40 · 3,00 · 3,50 · 3,60). */
 export const EXPECTED_MATCH_KEYS_IN_ORDER = [
   "ceasa-banana-prata-organica",
+  "candelaria-bananada",
   "candelaria-banana",
   "vec-banana-prata",
   "sao-jose-banana-nanica",
 ];
 
 /** Hard tier: never in the results. */
-export const HARD_DECOY_KEYS = ["candelaria-bananada", "vec-maca-argentina", "ceasa-carne-moida"];
+export const HARD_DECOY_KEYS = ["vec-maca-argentina", "ceasa-carne-moida"];
 
 /** Expected-failure candidate: absent if the threshold can separate it. */
 export const SOFT_DECOY_KEY = "sao-jose-bolo-de-banana";

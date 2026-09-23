@@ -17,7 +17,9 @@ that contradicts them is a bug. Workflow conventions live in the `AGENTS.md` fil
   lots (issue #3), and this matches it.
 - **Same product across shops** — "banana", "banana prata" and "banana nanica" count as the
   same product for a shopper; cultivars are included (recall over precision, for the
-  food-waste use case). "Bananada" and "bolo de banana" are different products.
+  food-waste use case). A product made of banana, such as "Bananada", also counts as a
+  match for "banana"; "bolo de banana" is the known hard case, a different product the
+  search may still return.
 
 ## Not in the model yet
 
