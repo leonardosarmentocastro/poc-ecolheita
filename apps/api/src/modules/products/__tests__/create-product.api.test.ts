@@ -59,6 +59,8 @@ describe("POST /products", () => {
     ["price as a string", { price: "4,99" }],
     ["negative price", { price: -1 }],
     ["negative quantity", { quantity: -1 }],
+    ["price beyond the column's range", { price: 2_147_483_648 }],
+    ["quantity beyond the column's range", { quantity: 2_147_483_648 }],
     ["discount above 100", { discountPercentage: 101 }],
     ["negative discount", { discountPercentage: -1 }],
     ["missing discount", { discountPercentage: undefined }],
