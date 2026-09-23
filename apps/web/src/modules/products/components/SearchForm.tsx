@@ -25,6 +25,8 @@ export function SearchForm({ onSearch }: SearchFormProps) {
         label="Nome do produto"
         placeholder="banana"
         value={value}
+        // The API rejects a query over 200 characters (400); stop the input there instead.
+        maxLength={200}
         onChange={(e) => setValue(e.currentTarget.value)}
         className="flex-1"
         size="md"

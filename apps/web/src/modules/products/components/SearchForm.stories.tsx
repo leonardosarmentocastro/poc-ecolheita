@@ -41,3 +41,14 @@ export const BlankIsNotSubmitted: Story = {
     await expect(args.onSearch).not.toHaveBeenCalled();
   },
 };
+
+/** A query stops at 200 characters, the API's limit, so an over-long query is never sent. */
+export const QueryCappedAt200Characters: Story = {
+  play: async ({ canvasElement, args }) => {
+    const input = within(canvasElement).getByRole("searchbox", { name: "Nome do produto" });
+    await userEvent.click(input);
+    await userEvent.paste("a".repeat(201));
+    await userEvent.keyboard("{Enter}");
+    await expect(args.onSearch).toHaveBeenCalledWith("a".repeat(200));
+  },
+};
