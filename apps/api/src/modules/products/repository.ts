@@ -66,6 +66,15 @@ export const productsRepository = {
     return row ? toProduct(row) : undefined;
   },
 
+  async remove(id: number): Promise<boolean> {
+    if (!Number.isInteger(id)) return false;
+    const deleted = await db
+      .delete(products)
+      .where(eq(products.id, id))
+      .returning({ id: products.id });
+    return deleted.length > 0;
+  },
+
   /** The stored vector, for tests and for slice 3's "re-embed only on rename" proof. */
   async findEmbedding(id: number): Promise<number[] | undefined> {
     const [row] = await db
