@@ -18,7 +18,7 @@ modules/<module>/
   types.ts                     # inferred row types (InferSelectModel, ...)
   routes.ts                    # express Router mapping paths -> resolvers
   __tests__/                   # module tests, run against the HTTP surface
-    api.test.ts
+    <operation>.api.test.ts    # one file per operation, e.g. create-product.api.test.ts
 ```
 
 Not every module needs every file. A trivial module (see `health/`) may only
@@ -90,7 +90,8 @@ export const getProductResolver = async (
   pass, then commit.
 - Tests live in `modules/<module>/__tests__/` and exercise the module through
   **HTTP** (the real contract) rather than internal functions. There is no
-  service-layer unit test — `api.test.ts` covers status codes and behavior.
+  service-layer unit test — the `<operation>.api.test.ts` files cover status codes and
+  behavior.
 - Repository- and schema-level tests are fine where they add value
   (`repository.test.ts`, `schema.test.ts`) and also live in `__tests__/`.
 - Shared test infra (server bootstrap, DB reset/migrations) lives in `test/`
@@ -107,4 +108,4 @@ export const getProductResolver = async (
 3. `resolvers/*` + `resolvers/index.ts`
 4. `routes.ts`
 5. Mount the router in `src/server/routes/connect.ts`
-6. `__tests__/api.test.ts`
+6. `__tests__/<operation>.api.test.ts`, one per operation
