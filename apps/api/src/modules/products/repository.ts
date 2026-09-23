@@ -3,7 +3,11 @@ import { db } from "@/db/client";
 import { embed, normalizeForEmbedding } from "@/modules/embeddings";
 import { products } from "@/modules/products/model";
 import { PRODUCT_PUBLIC_COLUMNS } from "@/modules/products/public-columns";
-import { INT4_MAX, type CreateProductInput } from "@/modules/products/schema";
+import {
+  INT4_MAX,
+  type CreateProductInput,
+  type UpdateProductInput,
+} from "@/modules/products/schema";
 import type { Product, SearchResult } from "@/modules/products/types";
 import { toProduct } from "@/modules/products/utils/to-product";
 
@@ -32,6 +36,33 @@ export const productsRepository = {
   async findById(id: number): Promise<Product | undefined> {
     if (!Number.isInteger(id) || id < 1 || id > INT4_MAX) return undefined;
     const [row] = await db.select(PRODUCT_PUBLIC_COLUMNS).from(products).where(eq(products.id, id));
+    return row ? toProduct(row) : undefined;
+  },
+
+  /**
+   * Partial update. The vector is recomputed only when the normalised name changed, so a
+   * change of case or spacing does not re-embed (CONTEXT.md § Search).
+   */
+  async update(id: number, input: UpdateProductInput): Promise<Product | undefined> {
+    if (!Number.isInteger(id)) return undefined;
+    // An empty body changes nothing, so it writes nothing: no updatedAt bump, no re-embed.
+    if (Object.keys(input).length === 0) return this.findById(id);
+    const [current] = await db
+      .select({ name: products.name })
+      .from(products)
+      .where(eq(products.id, id));
+    if (!current) return undefined;
+
+    const renamed =
+      input.name !== undefined &&
+      normalizeForEmbedding(input.name) !== normalizeForEmbedding(current.name);
+    const embedding = renamed ? await embed(normalizeForEmbedding(input.name!)) : undefined;
+
+    const [row] = await db
+      .update(products)
+      .set({ ...input, ...(embedding ? { embedding } : {}), updatedAt: new Date() })
+      .where(eq(products.id, id))
+      .returning(PRODUCT_PUBLIC_COLUMNS);
     return row ? toProduct(row) : undefined;
   },
 

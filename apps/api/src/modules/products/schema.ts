@@ -22,3 +22,7 @@ export const createProductSchema = insertSchema.omit({
 });
 
 export type CreateProductInput = z.infer<typeof createProductSchema>;
+
+export const updateProductSchema = createProductSchema.partial();
+
+export type UpdateProductInput = z.infer<typeof updateProductSchema>;
