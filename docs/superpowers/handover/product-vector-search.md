@@ -11,7 +11,7 @@ Spec(s): docs/superpowers/specs/2026-09-22-product-vector-search-design.md
 |---|---|---|---|---|---|
 | 1 | docs/superpowers/plans/2026-09-22-product-vector-search-slice-1-register-and-list.md | feat/product-vector-search-slice-1-register-and-list | feat/product-vector-search | open #4 | Registering a product and seeing it listed: the monorepo scaffold copied from treasury-2, pgvector Postgres, the `products` table, `POST` and `GET /products` (list and by id), the products page with its table and create drawer, the API, story and e2e harnesses, CI, and the durable docs (`AGENTS.md` local gates, `CONTEXT.md`, the two app `AGENTS.md`). |
 | 2 | docs/superpowers/plans/2026-09-22-product-vector-search-slice-2-search-by-meaning.md | feat/product-vector-search-slice-2-search-by-meaning | feat/product-vector-search-slice-1-register-and-list | open #5 | Finding the same product across shops by meaning and ranking it by best price: the embedding module and model loaded at boot, the pgvector extension and `embedding` column, embedding on create, `GET /products/search`, the similarity threshold, the banana fixture, the seed script, the similarity table, the search page, and the search rules appended to `CONTEXT.md`. |
-| 3 | docs/superpowers/plans/2026-09-22-product-vector-search-slice-3-edit-and-delete.md | feat/product-vector-search-slice-3-edit-and-delete | feat/product-vector-search-slice-2-search-by-meaning | todo | Changing and removing a registered product: `PATCH` and `DELETE /products/:id`, re-embedding when the normalised name changes, the edit mode of the product drawer, the delete confirmation dialog, and the row actions on the products table. |
+| 3 | docs/superpowers/plans/2026-09-22-product-vector-search-slice-3-edit-and-delete.md | feat/product-vector-search-slice-3-edit-and-delete | feat/product-vector-search-slice-2-search-by-meaning | open #6 | Changing and removing a registered product: `PATCH` and `DELETE /products/:id`, re-embedding when the normalised name changes, the edit mode of the product drawer, the delete confirmation dialog, and the row actions on the products table. |
 
 ## Umbrella PR body
 
@@ -30,7 +30,7 @@ Plan: docs/superpowers/specs/2026-09-22-product-vector-search-design.md
 |---|---|---|
 | 1 | register and list | #4 |
 | 2 | search by meaning | #5 |
-| 3 | edit and delete | — |
+| 3 | edit and delete | #6 |
 <!-- /stack -->
 
 ## Notes
