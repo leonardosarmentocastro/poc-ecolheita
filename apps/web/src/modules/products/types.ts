@@ -12,6 +12,11 @@ export interface Product {
   updatedAt: string;
 }
 
+export interface SearchResult extends Product {
+  /** Cosine similarity to the query, 4 decimal places, from the API. */
+  similarity: number;
+}
+
 export interface CreateProductInput {
   shopName: string;
   name: string;
