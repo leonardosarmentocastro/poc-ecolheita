@@ -32,4 +32,9 @@ describe("GET /products/:id", () => {
     const res = await fetch(`${base}/products/abc`);
     expect(res.status).toBe(404);
   });
+
+  it("is 404 for an id beyond the column's range, never 500", async () => {
+    const res = await fetch(`${base}/products/99999999999`);
+    expect(res.status).toBe(404);
+  });
 });

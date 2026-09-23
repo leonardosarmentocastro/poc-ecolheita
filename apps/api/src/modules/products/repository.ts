@@ -1,7 +1,7 @@
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { products } from "@/modules/products/model";
-import type { CreateProductInput } from "@/modules/products/schema";
+import { INT4_MAX, type CreateProductInput } from "@/modules/products/schema";
 import type { Product } from "@/modules/products/types";
 import { toProduct } from "@/modules/products/utils/to-product";
 
@@ -24,7 +24,7 @@ export const productsRepository = {
   },
 
   async findById(id: number): Promise<Product | undefined> {
-    if (!Number.isInteger(id)) return undefined;
+    if (!Number.isInteger(id) || id < 1 || id > INT4_MAX) return undefined;
     const [row] = await db.select().from(products).where(eq(products.id, id));
     return row ? toProduct(row) : undefined;
   },
