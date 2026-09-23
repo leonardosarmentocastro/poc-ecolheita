@@ -2,10 +2,12 @@ import { Router, type Express } from "express";
 import { z } from "zod";
 import { NotFoundError } from "@/db/data/errors";
 import { healthRouter } from "@/modules/health/routes";
+import { productsRouter } from "@/modules/products/routes";
 
 /** Mounts every module's router under its base path. The single source of truth for routing. */
 export const connectRoutes = (app: Express): void => {
   app.use("/health", healthRouter);
+  app.use("/products", productsRouter);
 
   // Test-only routes that trigger each branch of the error handler, so middleware behaviour
   // is tested where it is owned instead of through a domain module.
