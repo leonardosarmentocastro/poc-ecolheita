@@ -25,7 +25,8 @@ describe("DELETE /products/:id", () => {
     expect(list).toEqual([]);
   });
 
-  it("is 404 for a non-numeric id", async () => {
+  it("is 404 for a non-numeric or out-of-range id", async () => {
     expect((await fetch(`${base}/products/abc`, { method: "DELETE" })).status).toBe(404);
+    expect((await fetch(`${base}/products/99999999999`, { method: "DELETE" })).status).toBe(404);
   });
 });

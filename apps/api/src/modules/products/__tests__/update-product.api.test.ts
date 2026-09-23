@@ -86,8 +86,9 @@ describe("PATCH /products/:id", () => {
     expect((await res.json()).error).toBe("validation_error");
   });
 
-  it("is 404 for an unknown or non-numeric id", async () => {
+  it("is 404 for an unknown, non-numeric or out-of-range id", async () => {
     expect((await patch(base, 999999, { price: 1 })).status).toBe(404);
     expect((await patch(base, "abc", { price: 1 })).status).toBe(404);
+    expect((await patch(base, 99999999999, { price: 1 })).status).toBe(404);
   });
 });

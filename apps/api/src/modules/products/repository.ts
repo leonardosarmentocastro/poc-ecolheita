@@ -11,6 +11,9 @@ import {
 import type { Product, SearchResult } from "@/modules/products/types";
 import { toProduct } from "@/modules/products/utils/to-product";
 
+/** An id Postgres can hold in an `integer` column; anything else is simply not found. */
+const isProductId = (id: number): boolean => Number.isInteger(id) && id >= 1 && id <= INT4_MAX;
+
 /**
  * Every products write goes through here, and every write embeds: a product without a
  * vector never exists (apps/api/AGENTS.md, the one deviation from "queries only").
@@ -34,7 +37,7 @@ export const productsRepository = {
   },
 
   async findById(id: number): Promise<Product | undefined> {
-    if (!Number.isInteger(id) || id < 1 || id > INT4_MAX) return undefined;
+    if (!isProductId(id)) return undefined;
     const [row] = await db.select(PRODUCT_PUBLIC_COLUMNS).from(products).where(eq(products.id, id));
     return row ? toProduct(row) : undefined;
   },
@@ -44,7 +47,7 @@ export const productsRepository = {
    * change of case or spacing does not re-embed (CONTEXT.md § Search).
    */
   async update(id: number, input: UpdateProductInput): Promise<Product | undefined> {
-    if (!Number.isInteger(id)) return undefined;
+    if (!isProductId(id)) return undefined;
     // An empty body changes nothing, so it writes nothing: no updatedAt bump, no re-embed.
     if (Object.keys(input).length === 0) return this.findById(id);
     const [current] = await db
@@ -67,7 +70,7 @@ export const productsRepository = {
   },
 
   async remove(id: number): Promise<boolean> {
-    if (!Number.isInteger(id)) return false;
+    if (!isProductId(id)) return false;
     const deleted = await db
       .delete(products)
       .where(eq(products.id, id))
