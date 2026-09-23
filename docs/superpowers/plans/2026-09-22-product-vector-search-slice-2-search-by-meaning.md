@@ -1575,7 +1575,7 @@ test.describe("searching for banana", () => {
     await page.route("**/products/search**", (route) => route.abort());
     await page.getByRole("searchbox", { name: "Nome do produto" }).fill("maçã");
     await page.getByRole("button", { name: "Buscar" }).click();
-    await expect(page.getByRole("alert")).toHaveText("Não foi possível buscar. Tente novamente.");
+    await expect(page.getByRole("main").getByRole("alert")).toHaveText("Não foi possível buscar. Tente novamente.");
     await expect(page.getByRole("article")).toHaveCount(before);
   });
 });
@@ -1658,3 +1658,8 @@ git push -u origin feat/product-vector-search-slice-2
 ```
 
 The PR body (opened by `/implement-stack`) carries `Plan: docs/superpowers/plans/2026-09-22-product-vector-search-slice-2-search-by-meaning.md`, the similarity table from Task 6, the chosen default, and, if used, which assertion is an expected failure and why.
+
+## Review decisions
+
+- 2026-09-23, implementer, Task 10 Step 1: the failed-search e2e locates the alert inside `main` (`page.getByRole("main").getByRole("alert")`). Next's route announcer is a second, always-present `alert` region, so the page-wide locator was ambiguous. The acceptance criterion (the page shows "Não foi possível buscar. Tente novamente." and keeps the previous cards) is unchanged.
+- 2026-09-23, implementer, Task 10 Step 3: `SearchPageContainer` keeps the last good results by adjusting state during render (`if (data !== undefined && data !== lastResults) setLastResults(data)`) instead of in a `useEffect`, because the web lint rule `react-hooks/set-state-in-effect` rejects the effect. Same behaviour; the failed-search e2e proves it.
