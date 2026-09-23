@@ -4,3 +4,6 @@
 .claude/fixtures/scratch/
 .claude/settings.local.json
 <!-- hitl:end -->
+
+# Original Ecolheita app, kept locally as reference material only.
+ecolheita-original-code/
