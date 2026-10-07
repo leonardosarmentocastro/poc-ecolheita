@@ -35,7 +35,7 @@ first**. Distance is the third key and belongs to #3. This feature adds no locat
 The extended scenario below, written down before any code exists, passes as an HTTP test
 (with the scenario classifier) and as an end-to-end test. A person can reproduce it by hand:
 search "bolo" and see the three cakes under "Encontramos", the cake mix and cake pan under
-"Você também pode gostar", and no battery. Before slice 2's PR opens, the real-Jev
+"Você também pode gostar", and no battery. Before slice 3's PR opens, the real-Jev
 check (`tiers:eval`) is run and its table goes in the PR body.
 
 ## Non-goals
@@ -323,7 +323,7 @@ scenario's 14 rows are fewer than a full shortlist, so the eval also runs the 50
 case (the scenario plus filler names) **five times** and records the worst latency. A worst
 case above **1.5 s** (a margin under the 2 s timeout) is a blocker for the human, who
 chooses between raising the timeout and sending Jev fewer candidates than the shortlist holds. It is run
-before slice 2's PR opens and whenever the criteria wording or the pinned model
+before slice 3's PR opens and whenever the criteria wording or the pinned model
 changes; the table goes in the PR body. If Jev disagrees with the fixture, the criteria
 wording is changed and re-run. The fixture is never bent to fit. A disagreement that wording
 cannot fix is a blocker for the human.
@@ -345,6 +345,10 @@ absent, Bananada as a match, and "Bolo de banana absent" as an expected failure.
   expected-failure assertions, and the fixture exports that carried them
   (`EXPECTED_MATCH_KEYS_IN_ORDER`, `HARD_DECOY_KEYS`, `SOFT_DECOY_KEY`), which are replaced by
   the per-query expected tiers.
+- The edit-and-delete e2e ("renaming Banana to Maçã takes it out of the banana results")
+  asserts the old price order. Slice 1 changes it to assert the renamed product appears in
+  search under its new name; slice 2 restores "absent from the banana results", which the
+  scenario classifier then decides.
 - **Slice 2** asserts the full tiered answers for "banana" and "bolo" in the API test, and
   replaces the banana e2e with the "bolo" e2e.
 
@@ -384,9 +388,16 @@ write path; that duplicate names share one tier; that zero stock never shows; th
    *Testable:* "bolo" now finds every cake product, "acucar" finds Açúcar.
    While only this slice is merged, every search shows the untiered notice. That is
    intentional: it is the honest state of a search with no classifier.
-2. **Jev tiers the results** — the classifier seam, the Jev adapter, the scenario
-   classifier, the tiered response, the page's two sections and empty states, `tiers:eval`,
-   the "bolo" e2e replacing the banana one, and the `CONTEXT.md` tier rules. *Testable:* the expected tiered answers, end to end.
+2. **Search answers in tiers** — the classifier seam (`createApp` dependency, env
+   selection, `SEARCH_CLASSIFIER=scenario`), the scenario classifier, one question per
+   distinct name, the tiered response and the untiered fallback on failure (with its log
+   line), the page's two sections and empty states, the "bolo" e2e replacing the banana one,
+   and the `CONTEXT.md` tier rules. With no classifier configured, search stays untiered.
+   *Testable:* the expected tiered answers, end to end, with the scenario classifier.
+3. **Jev classifies** — the Jev adapter (request, parsing, failure kinds, 2 s timeout),
+   `TYPESAFE_API_KEY` selecting it, and `tiers:eval` with its latency gate. *Testable:* the
+   adapter against a local fake server; real Jev through `tiers:eval`, whose table goes in
+   this slice's PR body.
 
 ## Decisions and declined alternatives
 
@@ -411,3 +422,7 @@ write path; that duplicate names share one tier; that zero stock never shows; th
   resolver, the root `.env.example`), beyond those the spec lists.
 - *Forwarded to the plan gate:* which test proves the Jev-failure log line names the failure
   kind and never the query or the key.
+- Three slices, not two (plan gate, bubbled up): the tiered answer with its seam and
+  scenario classifier is proven end to end without any vendor, and the Jev adapter with
+  `tiers:eval` is its own capability. Two slices put about 32 files in the second one, and
+  this split is by capability, not by layer.
