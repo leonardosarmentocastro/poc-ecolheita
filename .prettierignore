@@ -1,0 +1,19 @@
+# Build and tool output
+node_modules/
+dist/
+.next/
+.turbo/
+storybook-static/
+test-results/
+e2e/test-results/
+e2e/playwright-report/
+__screenshots__/
+
+# Generated
+apps/api/drizzle/
+pnpm-lock.yaml
+
+# Prose is not formatted: AGENTS.md, CONTEXT.md, HITL.md and the agent prompts under
+# .claude/ are read as instructions; a formatter changing a table in them is a behaviour
+# change nothing tests.
+*.md

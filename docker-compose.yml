@@ -1,0 +1,22 @@
+services:
+  postgres:
+    # Postgres 16 with the pgvector extension available (slice 2 runs CREATE EXTENSION).
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ecolheita
+      POSTGRES_PASSWORD: ecolheita
+      POSTGRES_DB: ecolheita
+    ports:
+      - "5432:5432"
+    volumes:
+      - ecolheita_pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ecolheita -d ecolheita"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  ecolheita_pgdata:

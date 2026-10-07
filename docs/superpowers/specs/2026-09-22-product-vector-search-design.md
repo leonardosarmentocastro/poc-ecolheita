@@ -19,7 +19,7 @@ search, not RAG.
 
 One seeded scenario, written down here before any code exists, passes as an HTTP test and as
 an end-to-end test, and a person can reproduce it by hand in the browser: search "banana" and
-see the four bananas, cheapest first, with none of the decoys.
+see the four bananas and the bananada, cheapest first, with none of the decoys.
 
 ## Non-goals
 
@@ -40,28 +40,29 @@ for readability, the fixture stores cents.
 | 2 | VEC Hortifruti | Banana prata | 5,00 | 30% | 3,50 | match |
 | 3 | Hortifruti São José | Banana nanica | 4,00 | 10% | 3,60 | match |
 | 4 | CEASA SJC | Banana prata orgânica | 8,00 | 80% | 1,60 | match |
-| 5 | Mercadinho Candelária | Bananada | 3,00 | 20% | 2,40 | decoy |
+| 5 | Mercadinho Candelária | Bananada | 3,00 | 20% | 2,40 | match |
 | 6 | VEC Hortifruti | Maçã argentina | 7,00 | 40% | 4,20 | decoy |
 | 7 | Hortifruti São José | Bolo de banana | 12,00 | 30% | 8,40 | decoy |
 | 8 | CEASA SJC | Carne moída patinho | 30,00 | 80% | 6,00 | decoy |
 
 Every row has stock quantity 10 unless a test says otherwise.
 
-**Expected result for the query "banana":** rows 4, 1, 2, 3 in that order, and nothing else.
+**Expected result for the query "banana":** rows 4, 5, 1, 2, 3 in that order, and nothing else.
 
 What the ordering proves: the deepest discount (row 4) wins, but row 1 at 50% beats row 2 at
 30% only because of its base price, so "best price" is lowest final price, never highest
-discount percentage. Row 5 has the lowest final price of all and must still not appear: it
-is a different product.
+discount percentage. Row 5 (bananada, a product made of banana) is a match: it was first
+written as a decoy, but slice 2's similarity table showed it scores above three of the four
+bananas, and the human decided on 2026-09-23 that a banana product is an acceptable result.
 
 **Known risk, and what happens if it lands.** Row 7 contains the word "banana" and a
 sentence model may place it close to the query. The assertions are therefore in two tiers:
 
-- **Hard:** the first four results are rows 4, 1, 2, 3 in that order, and rows 5, 6 and 8
+- **Hard:** the first five results are rows 4, 5, 1, 2, 3 in that order, and rows 6 and 8
   are absent. Slice 2 does not merge while any of these fails.
-- **Expected-failure candidate:** the result list is exactly `[4, 1, 2, 3]`, which is to say
-  row 7 is absent. If no threshold keeps all four
-  bananas and excludes row 7, the implementer marks that one assertion as an explicit
+- **Expected-failure candidate:** the result list is exactly `[4, 5, 1, 2, 3]`, which is to say
+  row 7 is absent. If no threshold keeps all five
+  matches and excludes row 7, the implementer marks that one assertion as an explicit
   expected failure (Vitest `test.fails`, Playwright `test.fail()`), puts the similarity table
   in the slice 2 pull request body, and the slice merges. Hybrid search stays a follow-up
   issue, not a slice of this feature.
@@ -150,7 +151,7 @@ ascending, then similarity descending, then id ascending, so the order is total.
   config module.
 - The default is chosen empirically in slice 2: the implementer runs the seed scenario,
   prints the similarity of every row against "banana", and picks the value from the gap
-  between the last match (row 3 or whichever is lowest) and the first decoy. That table goes
+  between the lowest-scoring match and the highest-scoring hard decoy (rows 6 and 8). That table goes
   in the pull request body.
 - The scenario test asserts the expected ranking under the default. Changing the default
   without re-checking the scenario turns the test red.
@@ -272,7 +273,7 @@ a PR opens. Slice 1 names them in `AGENTS.md` under "Local gates": `pnpm test`,
   The slice plans name each story; the table above is the contract the plan review checks.
 - **E2E.** Slice 1: create a product through the drawer and see it in the table. Slice 2:
   seed the scenario by `POST /products` per fixture row against the e2e API, search "banana",
-  assert the four cards in order and no decoy (row 7 under the expected-failure rule above).
+  assert the five match cards in order and no decoy (row 7 under the expected-failure rule above).
   Slice 3: rename a banana to "maçã" and see it leave the results.
 - **Seed.** `pnpm --filter api seed` truncates `products` and inserts the fixture through the
   repository's `create`, the one write path, so seeded rows carry the same vectors as rows
@@ -346,6 +347,11 @@ Settled in the grill session of 2026-09-22 and the spec review round 1.
   e2e, reproducible by hand.
 - **Cultivars count as the same product** (recall over precision for the food-waste use case);
   decoys are different products that share letters.
+- **Bananada is a match, not a decoy** (human decision, 2026-09-23, after slice 2's
+  similarity table: "Bananada" 0.9579 against "banana", above three of the four bananas, lowest
+  "Banana prata orgânica" 0.7899, so no threshold could exclude it). A product made of banana is
+  an acceptable result for a shopper searching "banana". Recorded without reopening review
+  (the spec has had its two rounds); "bolo de banana" stays the expected-failure candidate.
 - **Embeddings in-process via Transformers.js**, not Ollama and not a hosted API: keeps the
   stack at Postgres plus Node, deterministic tests, no key, no extra service to deploy.
 - **Vector-only search** with a threshold; hybrid is a recorded follow-up.

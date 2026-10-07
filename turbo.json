@@ -1,0 +1,12 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": ["eslint.config.base.mjs"],
+  "tasks": {
+    "build": { "outputs": ["dist/**", ".next/**"], "dependsOn": ["^build"] },
+    "lint": {},
+    "typecheck": {},
+    "test": {},
+    "test:stories": {},
+    "dev": { "cache": false, "persistent": true }
+  }
+}
