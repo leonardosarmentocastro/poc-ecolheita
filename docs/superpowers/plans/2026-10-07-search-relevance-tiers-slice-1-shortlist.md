@@ -2,6 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Reviewed:** round 1 (2026-10-07).
 **Owns:** the no-cutoff shortlist — fuzzy (pg_trgm on `search_name`) and meaning (pgvector) lists interleaved into 50 — served untiered as `{ tiered: false, results }` (top 20), with the page's untiered state.
 
 **Goal:** Replace the 0.57 similarity cutoff with a two-list shortlist, so "bolo" finds every cake product and "acucar" finds "Açúcar refinado", served as one untiered list under a notice.
@@ -241,7 +242,7 @@ Mark the four old exports with `/** Removed in slice 1 Task 5 with the threshold
 - [ ] **Step 4: Run the API suite to see it pass**
 
 Run: `DATABASE_URL=postgres://ecolheita:ecolheita@localhost:5433/ecolheita_test pnpm --filter api test`
-Expected: PASS (the old threshold scenario test still passes: no new row is cheaper than 3,60 and above the threshold for "banana"). If it fails only because a new row entered the "banana" results, note the row in the commit message and continue — Task 5 replaces that test.
+Expected: PASS (the old threshold scenario test still passes: no new row is cheaper than 3,60 and above the threshold for "banana"). If it fails only because a new row entered the "banana" results, mark that one test `it.skip` with the comment `// replaced in slice 1 Task 5` — never commit a red suite.
 
 - [ ] **Step 5: Commit**
 
@@ -301,6 +302,7 @@ describe("ecolheita_search_name (the migration's backfill)", () => {
   const names = [
     ...SEARCH_SCENARIO.map((r) => r.name),
     "  \tFEIJÃO  Carioca\n",
+    "\u00a0Banana\u00a0",
     "ÁÀÂÃÄ éèêë íìîï óòôõö úùûü Çç Ññ",
   ];
   it.each(names)("matches normalizeForSearch for %j", async (name) => {
@@ -354,7 +356,7 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;--> statement-breakpoint
 CREATE OR REPLACE FUNCTION ecolheita_search_name(name text) RETURNS text
 LANGUAGE sql IMMUTABLE STRICT AS $$
   SELECT translate(
-    regexp_replace(lower(regexp_replace(name, '^\s+|\s+$', '', 'g')), '\s+', ' ', 'g'),
+    regexp_replace(lower(regexp_replace(replace(name, chr(160), ' '), '^\s+|\s+$', '', 'g')), '\s+', ' ', 'g'),
     'áàâãäåéèêëíìîïóòôõöúùûüçñý',
     'aaaaaaeeeeiiiiooooouuuucny'
   )
@@ -563,10 +565,11 @@ describe("productsRepository.shortlist", () => {
     expect(got.map((p) => p.id)).toEqual(expect.arrayContaining([idOfKey("candelaria-banana"), dup.id]));
   });
 
-  it("is deterministic", async () => {
-    const a = await productsRepository.shortlist("bolo");
-    const b = await productsRepository.shortlist("bolo");
-    expect(a.map((p) => p.id)).toEqual(b.map((p) => p.id));
+  it("breaks equal distances by id, so the order is stable", async () => {
+    const { key: _key, ...row } = scenarioRow("pao-quente-bolo-de-laranja");
+    const twin = await productsRepository.create(row); // same name: same distance on both lists
+    const ids = (await productsRepository.shortlist("bolo")).map((p) => p.id);
+    expect(ids.indexOf(idOfKey("pao-quente-bolo-de-laranja"))).toBeLessThan(ids.indexOf(twin.id));
   });
 });
 ```
@@ -868,7 +871,7 @@ export const NothingFound: Story = {
 };
 ```
 
-`SearchResults.stories.tsx`: build `Product`s (no `similarity`), `args: { query: "banana", response: { tiered: false, results: bananas }, loading: false, error: null }`, and:
+`SearchResults.stories.tsx`: rename the helper to `product(id, shopName, name, finalPrice): Product` (no `similarity`; slice 2 reuses it), `args: { query: "banana", response: { tiered: false, results: bananas }, loading: false, error: null }`, and:
 
 ```ts
 /** Before the first search: a prompt, no cards, no empty state. */
@@ -1114,3 +1117,7 @@ Expected: all PASS.
 git add e2e CONTEXT.md
 git commit -m "test(e2e): search is untiered; docs(context): shortlist, no cutoff, search name"
 ```
+
+## Review decisions
+
+- Plan review round 1: a mid-slice red test is skipped with a pointer to Task 5, never committed red; the backfill parity test covers a non-breaking space (and the SQL maps it to a space); the determinism case now proves the id tie-break.

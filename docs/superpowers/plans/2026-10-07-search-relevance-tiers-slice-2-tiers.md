@@ -2,6 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Reviewed:** round 1 (2026-10-07).
 **Owns:** the tiered answer — the classifier seam, the scenario classifier, one question per distinct name, `{ tiered: true, matches, related }` ordered by final price then id, the untiered fallback on classifier failure with its log line, and the page's two sections and empty states.
 
 **Goal:** With a classifier configured, search answers like the street-market seller: matches under "Encontramos…", related products under "Você também pode gostar", unrelated products never shown; when the classifier fails, the slice-1 untiered list.
@@ -327,7 +328,7 @@ git commit -m "feat(api): tierShortlist asks once per distinct name and orders t
 - Consumes: `scenarioClassifier` (Task 1), `Env` (`@/config/env`).
 - Produces:
   - `envSchema` gains `SEARCH_CLASSIFIER: z.enum(["scenario"]).optional()` (empty string → unset).
-  - `classifierFromEnv(env: Pick<Env, "SEARCH_CLASSIFIER">): Classifier | null`.
+  - `classifierFromEnv(env: Partial<Pick<Env, "SEARCH_CLASSIFIER">>): Classifier | null`.
   - `createApp(deps?: { classifier?: Classifier | null }): Express` — stores `deps.classifier ?? null` in `app.locals.classifier`.
   - `classifierOf(req: Request): Classifier | null` (reads `req.app.locals.classifier`).
   - `startServer(deps?: { classifier?: Classifier | null })` in `@test/helpers`.
@@ -647,7 +648,7 @@ git commit -m "feat(api): search answers in tiers, and untiered when the classif
 - Consumes: the API union.
 - Produces (web `types.ts`): `SearchResponse = { tiered: true; matches: Product[]; related: Product[] } | { tiered: false; results: Product[] }`.
 
-- [ ] **Step 1: Write the failing stories** — add to `SearchResults.stories.tsx` (reuse its `result(...)` → `Product` helper):
+- [ ] **Step 1: Write the failing stories** — add to `SearchResults.stories.tsx` (reuse slice 1's `product(id, shopName, name, finalPrice): Product` helper):
 
 ```ts
 const cakes = [product(10, "Padaria Pão Quente", "Fatia de bolo red velvet", 800), product(7, "Hortifruti São José", "Bolo de banana", 840)];
@@ -699,8 +700,6 @@ export const TieredNothing: Story = {
   },
 };
 ```
-
-(If the slice-1 helper is named `result`, rename it `product` here and in its slice-1 callers.)
 
 - [ ] **Step 2: Run them to see them fail**
 
@@ -938,3 +937,7 @@ Expected: all PASS.
 git add -A e2e CONTEXT.md
 git commit -m "test(e2e): searching bolo shows the tiers; docs(context): relevance tiers"
 ```
+
+## Review decisions
+
+- Plan review round 1: the stories reuse slice 1's `product(...)` helper by name; `classifierFromEnv` takes a `Partial` env, as its test passes `{}`.

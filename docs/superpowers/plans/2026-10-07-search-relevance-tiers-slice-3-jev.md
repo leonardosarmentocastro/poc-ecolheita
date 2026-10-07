@@ -2,6 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Reviewed:** round 1 (2026-10-07).
 **Owns:** the Jev classifier — the request, answer parsing, the failure kinds and the 2 s timeout, `TYPESAFE_API_KEY` selecting it, and `tiers:eval` with its agreement and latency gates.
 
 **Goal:** Real searches are tiered by TypeSafe Jev (`jev-1.13.0`) when `TYPESAFE_API_KEY` is set, and a human-run `tiers:eval` shows Jev agrees with the scenario's expected tiers within the latency budget.
@@ -29,7 +30,7 @@
 ## Review Focus
 
 - A product name with quotes or backslashes (`Bolo "da vó" \ caseiro`) must produce valid JSON instructions, not a 422 or a broken request. → Task 1 test.
-- Jev answering 401 (bad or revoked key) must answer untiered with kind `status`, and the log must not contain the key. → Task 2 test.
+- Jev answering 401 (bad or revoked key) rejects with kind `status` and an error message without the key (Task 2 test); the route then answers untiered and logs only the kind (slice 2 Task 4 test).
 - A 429 or 529 (rate limit, overload) must not be retried inside the 2 s budget. → Task 2 test (one request seen).
 - A response with an extra, unknown question id must be ignored, not fail the call. → Task 1 test.
 - A response arriving after the timeout must not resolve the classify call late. → Task 2 test.
@@ -229,18 +230,16 @@ export const TIER_CRITERIA: Record<Tier, { what: string; not_for?: string; examp
 };
 ```
 
-`jev-classifier.ts`:
+`jev-classifier.ts` — the happy path only; Task 2 adds every failure branch red-first:
 
 ```ts
 import { TIER_CRITERIA } from "@/modules/relevance/criteria";
-import { ClassifierError, type Classifier, type Tier } from "@/modules/relevance/types";
+import type { Classifier, Tier } from "@/modules/relevance/types";
 
 export const JEV_URL = "https://api.typesafe.ai/v1/systemone";
 /** Pinned (spec § Jev implementation): an upgrade is a deliberate change, re-checked by tiers:eval. */
 export const JEV_MODEL = "jev-1.13.0";
 export const JEV_TIMEOUT_MS = 2000;
-
-const TIERS: readonly Tier[] = ["match", "related", "unrelated"];
 
 /** TypeSafe Jev as the search classifier: one request per search, one choice per candidate. */
 export const createJevClassifier = ({
@@ -270,36 +269,14 @@ export const createJevClassifier = ({
         ]),
       ),
     };
-
-    let res: Response;
-    try {
-      res = await fetch(url, {
-        method: "POST",
-        headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(timeoutMs),
-      });
-    } catch (err) {
-      const name = (err as Error).name;
-      throw new ClassifierError(name === "TimeoutError" || name === "AbortError" ? "timeout" : "unexpected");
-    }
-    if (!res.ok) throw new ClassifierError("status");
-
-    let parsed: { answers?: Record<string, { choice?: unknown }> };
-    try {
-      parsed = await res.json();
-    } catch (err) {
-      const name = (err as Error).name;
-      throw new ClassifierError(name === "TimeoutError" || name === "AbortError" ? "timeout" : "invalid");
-    }
-
-    const tiers = new Map<number, Tier>();
-    candidates.forEach((c, i) => {
-      const choice = parsed.answers?.[ids[i]]?.choice;
-      if (!TIERS.includes(choice as Tier)) throw new ClassifierError("invalid");
-      tiers.set(c.id, choice as Tier);
+    void timeoutMs; // used from Task 2
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+      body: JSON.stringify(body),
     });
-    return tiers;
+    const parsed: { answers: Record<string, { choice: Tier }> } = await res.json();
+    return new Map(candidates.map((c, i) => [c.id, parsed.answers[ids[i]].choice]));
   },
 });
 ```
@@ -321,7 +298,7 @@ git commit -m "feat(api): Jev classifier sends one choice per candidate and read
 
 **Files:**
 - Test: `apps/api/src/modules/relevance/__tests__/jev-classifier-failures.test.ts`
-- Modify (only if a test shows a gap): `apps/api/src/modules/relevance/jev-classifier.ts`
+- Modify: `apps/api/src/modules/relevance/jev-classifier.ts`
 
 **Interfaces:**
 - Consumes: `createJevClassifier`, `startFakeJev`, `answering`, `ClassifierError`.
@@ -395,16 +372,63 @@ describe("createJevClassifier failures", () => {
 });
 ```
 
-- [ ] **Step 2: Run them**
+- [ ] **Step 2: Run them to see them fail**
 
 Run: `DATABASE_URL=postgres://ecolheita:ecolheita@localhost:5433/ecolheita_test pnpm --filter api exec vitest run src/modules/relevance/__tests__/jev-classifier-failures.test.ts`
-Expected: PASS if Task 1's implementation already covers every kind. If a case fails, it is a red test — fix `jev-classifier.ts` minimally and re-run. (Write these tests before touching the implementation; if all pass first time, temporarily break one branch, e.g. map timeouts to `"unexpected"`, to see the timeout test fail, then restore.)
+Expected: FAIL — every case but "defaults the timeout to 2000 ms": Task 1 has no failure handling, so errors surface as raw `TypeError`/`SyntaxError` and the late answer is awaited.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 3: Implement the failure kinds**
+
+Replace the body of `classify` after `const body = …` with:
+
+```ts
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (err) {
+      throw new ClassifierError(isAbort(err) ? "timeout" : "unexpected");
+    }
+    if (!res.ok) throw new ClassifierError("status");
+
+    let parsed: { answers?: Record<string, { choice?: unknown }> };
+    try {
+      parsed = await res.json();
+    } catch (err) {
+      throw new ClassifierError(isAbort(err) ? "timeout" : "invalid");
+    }
+
+    const tiers = new Map<number, Tier>();
+    candidates.forEach((c, i) => {
+      const choice = parsed.answers?.[ids[i]]?.choice;
+      if (!TIERS.includes(choice as Tier)) throw new ClassifierError("invalid");
+      tiers.set(c.id, choice as Tier);
+    });
+    return tiers;
+```
+
+with, at module level (drop the `void timeoutMs;` line):
+
+```ts
+import { ClassifierError, type Classifier, type Tier } from "@/modules/relevance/types";
+
+const TIERS: readonly Tier[] = ["match", "related", "unrelated"];
+const isAbort = (err: unknown) => ["TimeoutError", "AbortError"].includes((err as Error)?.name);
+```
+
+- [ ] **Step 4: Run them to see them pass**
+
+Run the Step 2 command, then `…/jev-classifier.test.ts` again: both PASS.
+
+- [ ] **Step 5: Commit**
 
 ```bash
 git add apps/api/src/modules/relevance
-git commit -m "test(api): Jev failures reject with their kind, within the timeout, never retried"
+git commit -m "feat(api): Jev failures reject with their kind, within the timeout, never retried"
 ```
 
 ---
@@ -634,7 +658,7 @@ await seedSearchScenario();
 const rows: EvalRow[] = [];
 const latencies: number[] = [];
 let timedOut = false;
-console.log("| query | product | expected | Jev | ✓ |\n|---|---|---|---|---|");
+console.log("| query | product | expected | Jev | ✓ |\n|---|---|---|---|---|"); // no confidence column: the adapter does not return it (spec § Jev implementation)
 for (const q of Object.keys(EXPECTED_TIERS) as ScenarioQuery[]) {
   const shortlist = await productsRepository.shortlist(q);
   try {
@@ -698,7 +722,7 @@ git commit -m "feat(api): tiers:eval grades real Jev on the scenario with a late
 
 ---
 
-### Task 5: `CONTEXT.md`, README, gates
+### Task 5: `CONTEXT.md`, gates
 
 **Files:**
 - Modify: `CONTEXT.md`
@@ -731,3 +755,8 @@ git commit -m "docs(context): Jev is the search classifier"
 ```
 
 The PR body for this slice carries the `tiers:eval` output (Task 4, Step 5).
+
+## Review decisions
+
+- Plan review round 1: the Jev failure branches move from Task 1 to Task 2 so their tests run red first.
+- Plan review round 1: `tiers:eval` prints no confidence column; the spec now says so (bubbled up).

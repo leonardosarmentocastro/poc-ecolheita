@@ -148,8 +148,9 @@ The vector keeps the accented name (the model understands "maçã" better than "
 2. Add `search_name` nullable, backfill existing rows, set `NOT NULL`. The backfill must
    produce what `normalizeForSearch` would. If SQL cannot reproduce it exactly (for example
    `unaccent` differs from NFD stripping on some character), the backfill is done by a
-   one-off Node step the plan names. Either way, an API test proves a backfilled row and a
-   freshly created row with the same name have the same `search_name`.
+   one-off Node step the plan names. Either way, a repository-level test proves the backfill
+   expression gives what `normalizeForSearch` gives, on every scenario name and on accent and
+   whitespace edge cases (the test database migrates empty, so no backfilled row exists to read).
 3. A GiST index `gist_trgm_ops` on `search_name`, which supports ordering by trigram distance.
 
 The products table keeps no vector index. Every search compares against every row, which is
@@ -317,7 +318,7 @@ runs). The tests split what is our code from what is Jev's judgement.
 
 `tiers:eval` needs `TYPESAFE_API_KEY`, seeds the scenario, runs both queries through the
 real shortlist at full size and **the production Jev adapter, with its 2 s timeout**, and
-prints product | expected | Jev | confidence | ✓/✗, plus each query's latency. A timeout
+prints product | expected | Jev | ✓/✗, plus each query's latency (no confidence: the adapter does not return it). A timeout
 fails the eval, because it means real searches would fall back to the untiered list. The
 scenario's 14 rows are fewer than a full shortlist, so the eval also runs the 50-candidate
 case (the scenario plus filler names) **five times** and records the worst latency. A worst
@@ -426,3 +427,6 @@ write path; that duplicate names share one tier; that zero stock never shows; th
   scenario classifier is proven end to end without any vendor, and the Jev adapter with
   `tiers:eval` is its own capability. Two slices put about 32 files in the second one, and
   this split is by capability, not by layer.
+- **Bubbled up from plan review (round 1)** — the backfill is proven by a function-parity
+  test at repository level, not an API test; `tiers:eval` prints no confidence column,
+  consistent with the adapter not returning confidence.
