@@ -1,0 +1,111 @@
+import { and, asc, cosineDistance, desc, eq, gt, gte, sql } from "drizzle-orm";
+import { db } from "@/db/client";
+import { embed, normalizeForEmbedding } from "@/modules/embeddings";
+import { products } from "@/modules/products/model";
+import { PRODUCT_PUBLIC_COLUMNS } from "@/modules/products/public-columns";
+import {
+  INT4_MAX,
+  type CreateProductInput,
+  type UpdateProductInput,
+} from "@/modules/products/schema";
+import type { Product, SearchResult } from "@/modules/products/types";
+import { toProduct } from "@/modules/products/utils/to-product";
+
+/** An id Postgres can hold in an `integer` column; anything else is simply not found. */
+const isProductId = (id: number): boolean => Number.isInteger(id) && id >= 1 && id <= INT4_MAX;
+
+/**
+ * Every products write goes through here, and every write embeds: a product without a
+ * vector never exists (apps/api/AGENTS.md, the one deviation from "queries only").
+ */
+export const productsRepository = {
+  async create(input: CreateProductInput): Promise<Product> {
+    const embedding = await embed(normalizeForEmbedding(input.name));
+    const [row] = await db
+      .insert(products)
+      .values({ ...input, embedding })
+      .returning(PRODUCT_PUBLIC_COLUMNS);
+    return toProduct(row);
+  },
+
+  async findAll(): Promise<Product[]> {
+    const rows = await db
+      .select(PRODUCT_PUBLIC_COLUMNS)
+      .from(products)
+      .orderBy(desc(products.createdAt), desc(products.id));
+    return rows.map(toProduct);
+  },
+
+  async findById(id: number): Promise<Product | undefined> {
+    if (!isProductId(id)) return undefined;
+    const [row] = await db.select(PRODUCT_PUBLIC_COLUMNS).from(products).where(eq(products.id, id));
+    return row ? toProduct(row) : undefined;
+  },
+
+  /**
+   * Partial update. The vector is recomputed only when the normalised name changed, so a
+   * change of case or spacing does not re-embed (CONTEXT.md § Search).
+   */
+  async update(id: number, input: UpdateProductInput): Promise<Product | undefined> {
+    if (!isProductId(id)) return undefined;
+    // An empty body changes nothing, so it writes nothing: no updatedAt bump, no re-embed.
+    if (Object.keys(input).length === 0) return this.findById(id);
+    const [current] = await db
+      .select({ name: products.name })
+      .from(products)
+      .where(eq(products.id, id));
+    if (!current) return undefined;
+
+    const renamed =
+      input.name !== undefined &&
+      normalizeForEmbedding(input.name) !== normalizeForEmbedding(current.name);
+    const embedding = renamed ? await embed(normalizeForEmbedding(input.name!)) : undefined;
+
+    const [row] = await db
+      .update(products)
+      .set({ ...input, ...(embedding ? { embedding } : {}), updatedAt: new Date() })
+      .where(eq(products.id, id))
+      .returning(PRODUCT_PUBLIC_COLUMNS);
+    return row ? toProduct(row) : undefined;
+  },
+
+  async remove(id: number): Promise<boolean> {
+    if (!isProductId(id)) return false;
+    const deleted = await db
+      .delete(products)
+      .where(eq(products.id, id))
+      .returning({ id: products.id });
+    return deleted.length > 0;
+  },
+
+  /** The stored vector, for tests and for slice 3's "re-embed only on rename" proof. */
+  async findEmbedding(id: number): Promise<number[] | undefined> {
+    const [row] = await db
+      .select({ embedding: products.embedding })
+      .from(products)
+      .where(eq(products.id, id));
+    return row?.embedding ?? undefined;
+  },
+
+  /**
+   * Products whose name is close enough to the query vector, cheapest first
+   * (CONTEXT.md: best price is the lowest final price). Zero stock never shows.
+   */
+  async search(
+    queryVector: number[],
+    { threshold, limit = 20 }: { threshold: number; limit?: number },
+  ): Promise<SearchResult[]> {
+    const similarity = sql<number>`1 - (${cosineDistance(products.embedding, queryVector)})`;
+    const finalPriceSql = sql`round((${products.price} * (100 - ${products.discountPercentage}))::numeric / 100)`;
+    const rows = await db
+      .select({ ...PRODUCT_PUBLIC_COLUMNS, similarity })
+      .from(products)
+      .where(and(gte(similarity, threshold), gt(products.quantity, 0)))
+      .orderBy(asc(finalPriceSql), desc(similarity), asc(products.id))
+      .limit(limit);
+    return rows.map(({ similarity, ...row }) => ({
+      ...toProduct(row),
+      similarity: Number(Number(similarity).toFixed(4)),
+    }));
+  },
+};
