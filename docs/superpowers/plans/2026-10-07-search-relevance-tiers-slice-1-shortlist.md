@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Reviewed:** round 1 (2026-10-07).
+**Reviewed:** round 1 (2026-10-07) · round 2 (2026-10-07).
 **Owns:** the no-cutoff shortlist — fuzzy (pg_trgm on `search_name`) and meaning (pgvector) lists interleaved into 50 — served untiered as `{ tiered: false, results }` (top 20), with the page's untiered state.
 
 **Goal:** Replace the 0.57 similarity cutoff with a two-list shortlist, so "bolo" finds every cake product and "acucar" finds "Açúcar refinado", served as one untiered list under a notice.
@@ -303,6 +303,8 @@ describe("ecolheita_search_name (the migration's backfill)", () => {
     ...SEARCH_SCENARIO.map((r) => r.name),
     "  \tFEIJÃO  Carioca\n",
     "\u00a0Banana\u00a0",
+    "Mac\u0327a\u0303", // "Maçã" typed decomposed (NFD), as some keyboards produce
+    "Ōmega ăș",
     "ÁÀÂÃÄ éèêë íìîï óòôõö úùûü Çç Ññ",
   ];
   it.each(names)("matches normalizeForSearch for %j", async (name) => {
@@ -351,14 +353,16 @@ Run: `pnpm --filter api db:generate`. Replace the body of the generated `apps/ap
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS pg_trgm;--> statement-breakpoint
--- Backfill only. Mirrors normalizeForSearch (trim, lowercase, collapse whitespace, strip
--- accents); a test proves the two agree. The application never calls it.
+-- Backfill only. Mirrors normalizeForSearch (trim, lowercase, collapse whitespace, NFD, drop
+-- combining marks); a test proves the two agree. The application never calls it.
 CREATE OR REPLACE FUNCTION ecolheita_search_name(name text) RETURNS text
 LANGUAGE sql IMMUTABLE STRICT AS $$
-  SELECT translate(
-    regexp_replace(lower(regexp_replace(replace(name, chr(160), ' '), '^\s+|\s+$', '', 'g')), '\s+', ' ', 'g'),
-    'áàâãäåéèêëíìîïóòôõöúùûüçñý',
-    'aaaaaaeeeeiiiiooooouuuucny'
+  SELECT regexp_replace(
+    normalize(
+      regexp_replace(lower(regexp_replace(replace(name, chr(160), ' '), '^\s+|\s+$', '', 'g')), '\s+', ' ', 'g'),
+      NFD
+    ),
+    '[\u0300-\u036f]', '', 'g'
   )
 $$;--> statement-breakpoint
 ALTER TABLE "products" ADD COLUMN "search_name" text;--> statement-breakpoint
@@ -368,6 +372,8 @@ CREATE INDEX "products_search_name_trgm_idx" ON "products" USING gist ("search_n
 ```
 
 If the generated index line differs only in quoting, keep the generated form.
+
+If the parity test cannot be made green with SQL, replace the `UPDATE` with the Node step the spec names (a one-off script run by the migration's author that writes `normalizeForSearch(name)` for every row, before `SET NOT NULL`), and drop the function.
 
 - [ ] **Step 5: Repository writes**
 
@@ -566,10 +572,14 @@ describe("productsRepository.shortlist", () => {
   });
 
   it("breaks equal distances by id, so the order is stable", async () => {
+    const original = idOfKey("pao-quente-bolo-de-laranja");
     const { key: _key, ...row } = scenarioRow("pao-quente-bolo-de-laranja");
     const twin = await productsRepository.create(row); // same name: same distance on both lists
+    // Rewrite the original so it now sits after the twin on disk: only the id tie-break
+    // can still put it first.
+    await productsRepository.update(original, { price: row.price + 1 });
     const ids = (await productsRepository.shortlist("bolo")).map((p) => p.id);
-    expect(ids.indexOf(idOfKey("pao-quente-bolo-de-laranja"))).toBeLessThan(ids.indexOf(twin.id));
+    expect(ids.indexOf(original)).toBeLessThan(ids.indexOf(twin.id));
   });
 });
 ```
@@ -1120,4 +1130,5 @@ git commit -m "test(e2e): search is untiered; docs(context): shortlist, no cutof
 
 ## Review decisions
 
+- Plan review round 2: the backfill function uses NFD plus combining-mark removal, like `normalizeForSearch`; the parity test adds decomposed input and letters outside Portuguese; the tie-break test rewrites the original row first so disk order cannot pass it.
 - Plan review round 1: a mid-slice red test is skipped with a pointer to Task 5, never committed red; the backfill parity test covers a non-breaking space (and the SQL maps it to a space); the determinism case now proves the id tie-break.

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Reviewed:** round 1 (2026-10-07).
+**Reviewed:** round 1 (2026-10-07) · round 2 (2026-10-07).
 **Owns:** the Jev classifier — the request, answer parsing, the failure kinds and the 2 s timeout, `TYPESAFE_API_KEY` selecting it, and `tiers:eval` with its agreement and latency gates.
 
 **Goal:** Real searches are tiered by TypeSafe Jev (`jev-1.13.0`) when `TYPESAFE_API_KEY` is set, and a human-run `tiers:eval` shows Jev agrees with the scenario's expected tiers within the latency budget.

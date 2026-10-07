@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Reviewed:** round 1 (2026-10-07).
+**Reviewed:** round 1 (2026-10-07) · round 2 (2026-10-07).
 **Owns:** the tiered answer — the classifier seam, the scenario classifier, one question per distinct name, `{ tiered: true, matches, related }` ordered by final price then id, the untiered fallback on classifier failure with its log line, and the page's two sections and empty states.
 
 **Goal:** With a classifier configured, search answers like the street-market seller: matches under "Encontramos…", related products under "Você também pode gostar", unrelated products never shown; when the classifier fails, the slice-1 untiered list.
@@ -491,11 +491,12 @@ describe("the search scenario, tiered", () => {
 Append to `search-products.api.test.ts`:
 
 ```ts
-import { vi } from "vitest";
+import { afterEach, vi } from "vitest";
 import { ClassifierError, type Classifier } from "@/modules/relevance";
 import { scenarioClassifier } from "@/modules/products/fixtures/scenario-classifier";
 
 describe("GET /products/search with a classifier", () => {
+  afterEach(() => vi.restoreAllMocks());
   const servers: Server[] = [];
   const serve = async (classifier: Classifier) => {
     const s = await startServer({ classifier });
@@ -518,7 +519,6 @@ describe("GET /products/search with a classifier", () => {
     expect(warn).toHaveBeenCalledTimes(1);
     expect(String(warn.mock.calls[0][0])).toBe("search answered untiered: classifier timeout");
     expect(JSON.stringify(warn.mock.calls)).not.toContain("segredo-da-busca");
-    warn.mockRestore();
   });
 
   it("answers untiered when the classifier leaves a candidate without a tier", async () => {
@@ -527,7 +527,6 @@ describe("GET /products/search with a classifier", () => {
     await create(b, { name: "Banana" });
     expect((await search(b, "banana")).tiered).toBe(false);
     expect(String(warn.mock.calls[0][0])).toBe("search answered untiered: classifier invalid");
-    warn.mockRestore();
   });
 
   it("answers untiered, not 500, when the classifier has a bug", async () => {
@@ -538,7 +537,15 @@ describe("GET /products/search with a classifier", () => {
     expect(res.status).toBe(200);
     expect((await res.json()).tiered).toBe(false);
     expect(String(warn.mock.calls[0][0])).toBe("search answered untiered: classifier unexpected");
-    warn.mockRestore();
+  });
+
+  it("logs nothing when no classifier is configured", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { server: plain, base: b } = await startServer();
+    servers.push(plain);
+    await create(b, { name: "Banana" });
+    expect((await search(b, "banana")).tiered).toBe(false);
+    expect(warn).not.toHaveBeenCalled();
   });
 
   it("answers an empty tiered list without asking when nothing is in stock", async () => {
@@ -686,6 +693,30 @@ export const NoMatchButRelated: Story = {
     await expect(c.getByRole("heading", { name: "Não encontramos “bolo”" })).toBeInTheDocument();
     await expect(c.getByRole("heading", { name: "Você também pode gostar" })).toBeInTheDocument();
     await expect(names(canvasElement)).toEqual(["Mistura para bolo de chocolate"]);
+  },
+};
+
+/** Loading or failing over a tiered answer keeps its sections and cards on screen. */
+export const LoadingKeepsTieredResults: Story = {
+  args: { query: "bolo", response: { tiered: true, matches: cakes, related: cakeExtras }, loading: true },
+  play: async ({ canvasElement }) => {
+    const c = within(canvasElement);
+    await expect(c.getByRole("status")).toHaveTextContent("Buscando…");
+    await expect(c.getByRole("heading", { name: "Você também pode gostar" })).toBeInTheDocument();
+    await expect(c.getAllByRole("article")).toHaveLength(3);
+  },
+};
+
+export const FailedKeepsTieredResults: Story = {
+  args: {
+    query: "bolo",
+    response: { tiered: true, matches: cakes, related: cakeExtras },
+    error: "Não foi possível buscar. Tente novamente.",
+  },
+  play: async ({ canvasElement }) => {
+    const c = within(canvasElement);
+    await expect(c.getByRole("alert")).toHaveTextContent("Não foi possível buscar. Tente novamente.");
+    await expect(c.getAllByRole("article")).toHaveLength(3);
   },
 };
 
@@ -922,6 +953,8 @@ Add to **§ Search**:
   unrelated products.
 ```
 
+This **Untiered answer** entry replaces slice 1's **Ranking (untiered)** entry; delete that one so the rule is stated once.
+
 - [ ] **Step 6: Run every gate**
 
 Run: `pnpm lint && pnpm typecheck && DATABASE_URL=postgres://ecolheita:ecolheita@localhost:5433/ecolheita_test pnpm test && pnpm test:stories && E2E_DATABASE_URL=postgres://ecolheita:ecolheita@localhost:5433/ecolheita_e2e pnpm e2e`
@@ -940,4 +973,5 @@ git commit -m "test(e2e): searching bolo shows the tiers; docs(context): relevan
 
 ## Review decisions
 
+- Plan review round 2: a test proves the no-classifier path logs nothing; log spies are restored in `afterEach`; stories cover loading and error over a tiered answer; `CONTEXT.md` states the untiered rule once.
 - Plan review round 1: the stories reuse slice 1's `product(...)` helper by name; `classifierFromEnv` takes a `Partial` env, as its test passes `{}`.
