@@ -13,3 +13,15 @@ describe("envSchema", () => {
     );
   });
 });
+
+describe("SEARCH_CLASSIFIER", () => {
+  it("accepts scenario and treats empty as unset", () => {
+    expect(envSchema.parse({ ...base, SEARCH_CLASSIFIER: "scenario" }).SEARCH_CLASSIFIER).toBe(
+      "scenario",
+    );
+    expect(envSchema.parse({ ...base, SEARCH_CLASSIFIER: "" }).SEARCH_CLASSIFIER).toBeUndefined();
+  });
+  it("refuses any other value so the boot fails", () => {
+    expect(() => envSchema.parse({ ...base, SEARCH_CLASSIFIER: "jev" })).toThrow();
+  });
+});
