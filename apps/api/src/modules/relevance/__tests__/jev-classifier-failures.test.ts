@@ -65,7 +65,7 @@ describe("createJevClassifier failures", () => {
     ).rejects.toMatchObject({ kind: "invalid" });
   });
 
-  it("aborts and rejects as timeout when the answer is late, and never resolves afterwards", async () => {
+  it("aborts the request and rejects as timeout within the timeout when the answer is late", async () => {
     const fake = await serve((req) => ({ ...answering(() => "match")(req), delayMs: 500 }));
     const started = Date.now();
     await expect(
