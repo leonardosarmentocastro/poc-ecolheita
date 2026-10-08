@@ -63,6 +63,10 @@ test.describe("searching for bolo", () => {
       "Não foi possível buscar. Tente novamente.",
     );
     await expect(page.getByRole("article")).toHaveCount(before);
+    // The kept cards are still headed by the search they answered, not the one that failed.
+    await expect(
+      page.getByRole("heading", { name: "Encontramos 3 produtos para “bolo”" }),
+    ).toBeVisible();
   });
 });
 

@@ -9,7 +9,7 @@ import type { SearchResponse } from "@/modules/products/types";
 /** Container: owns the submitted query and the fetch; renders the presentational pieces. No story. */
 export function SearchPageContainer() {
   const [query, setQuery] = useState("");
-  const { data, isFetching, error, refetch } = useProductSearch(query);
+  const { data, isPlaceholderData, isFetching, error, refetch } = useProductSearch(query);
   // Submitting the current text again is a state no-op, so react-query would not fetch;
   // "Tente novamente" must search again, so the same query refetches explicitly.
   const search = (next: string) => {
@@ -20,8 +20,13 @@ export function SearchPageContainer() {
   // `data` is undefined. The last good answer is kept here so a failure keeps the cards on
   // screen (spec § Web, search page states).
   // Adjusted during render rather than in an effect (react.dev, "You might not need an effect").
-  const [lastResponse, setLastResponse] = useState<SearchResponse | undefined>(undefined);
-  if (data !== undefined && data !== lastResponse) setLastResponse(data);
+  // The query travels with its answer, so headings name what the cards on screen answered;
+  // placeholder data is the previous query's answer, so it is never recorded under this one.
+  const [last, setLast] = useState<{ query: string; response: SearchResponse } | undefined>(
+    undefined,
+  );
+  if (data !== undefined && !isPlaceholderData && data !== last?.response)
+    setLast({ query, response: data });
 
   return (
     <main className="container mx-auto max-w-3xl p-4 sm:p-8">
@@ -30,7 +35,8 @@ export function SearchPageContainer() {
         <SearchForm onSearch={search} />
         <SearchResults
           query={query}
-          response={data ?? lastResponse}
+          answeredQuery={last?.query ?? ""}
+          response={last?.response}
           loading={isFetching}
           error={error ? "Não foi possível buscar. Tente novamente." : null}
         />

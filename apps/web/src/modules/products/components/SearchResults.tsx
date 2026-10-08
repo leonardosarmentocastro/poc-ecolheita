@@ -10,6 +10,8 @@ const plural = (n: number) => (n === 1 ? "1 produto" : `${n} produtos`);
 export interface SearchResultsProps {
   /** "" means no search has been submitted yet (idle). */
   query: string;
+  /** The query that produced `response`; differs from `query` while a new search loads or after it fails. */
+  answeredQuery: string;
   /** The last answer; kept on screen while loading or after an error. */
   response: SearchResponse | undefined;
   loading: boolean;
@@ -17,7 +19,13 @@ export interface SearchResultsProps {
 }
 
 /** Presentational: idle, loading and error keep whatever cards are already on screen. */
-export function SearchResults({ query, response, loading, error }: SearchResultsProps) {
+export function SearchResults({
+  query,
+  answeredQuery,
+  response,
+  loading,
+  error,
+}: SearchResultsProps) {
   if (query === "") {
     return <Text c="dimmed">Digite o nome de um produto</Text>;
   }
@@ -36,7 +44,7 @@ export function SearchResults({ query, response, loading, error }: SearchResults
       )}
       {response?.tiered === false && (
         <>
-          {settled && response.results.length === 0 && <SearchEmptyState query={query} />}
+          {settled && response.results.length === 0 && <SearchEmptyState query={answeredQuery} />}
           {response.results.length > 0 && (
             <Text c="dimmed">Não conseguimos organizar os resultados por relevância</Text>
           )}
@@ -49,10 +57,11 @@ export function SearchResults({ query, response, loading, error }: SearchResults
         <>
           {response.matches.length > 0 ? (
             <Title order={2} size="h4">
-              Encontramos {plural(response.matches.length)} para “{query}”
+              Encontramos {plural(response.matches.length)} para “{answeredQuery}”
             </Title>
           ) : (
-            settled && <SearchEmptyState query={query} />
+            // Kept over a new search, the plain "no" still heads the related section it answered.
+            (settled || response.related.length > 0) && <SearchEmptyState query={answeredQuery} />
           )}
           {response.matches.map((p) => (
             <SearchResultCard key={p.id} product={p} />

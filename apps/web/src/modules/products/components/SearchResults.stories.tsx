@@ -26,6 +26,7 @@ const meta = {
   tags: ["autodocs"],
   args: {
     query: "banana",
+    answeredQuery: "banana",
     response: { tiered: false, results: bananas },
     loading: false,
     error: null,
@@ -37,7 +38,7 @@ type Story = StoryObj<typeof meta>;
 
 /** Before the first search: a prompt, no cards, no empty state. */
 export const Idle: Story = {
-  args: { query: "", response: undefined },
+  args: { query: "", answeredQuery: "", response: undefined },
   play: async ({ canvasElement }) => {
     const c = within(canvasElement);
     await expect(c.getByText("Digite o nome de um produto")).toBeInTheDocument();
@@ -82,7 +83,11 @@ export const FailedKeepsPreviousResults: Story = {
 
 /** Untiered and empty: the "não encontramos" heading, no notice. */
 export const UntieredNothing: Story = {
-  args: { query: "detergente", response: { tiered: false, results: [] } },
+  args: {
+    query: "detergente",
+    answeredQuery: "detergente",
+    response: { tiered: false, results: [] },
+  },
   play: async ({ canvasElement }) => {
     const c = within(canvasElement);
     await expect(
@@ -104,7 +109,11 @@ const names = (el: HTMLElement) =>
 
 /** Matches and related: two headed sections, each in the order given. */
 export const MatchesAndRelated: Story = {
-  args: { query: "bolo", response: { tiered: true, matches: cakes, related: cakeExtras } },
+  args: {
+    query: "bolo",
+    answeredQuery: "bolo",
+    response: { tiered: true, matches: cakes, related: cakeExtras },
+  },
   play: async ({ canvasElement }) => {
     const c = within(canvasElement);
     const found = c.getByRole("heading", { name: "Encontramos 2 produtos para “bolo”" });
@@ -123,7 +132,11 @@ export const MatchesAndRelated: Story = {
 
 /** One match: the singular. */
 export const OneMatch: Story = {
-  args: { query: "bolo", response: { tiered: true, matches: cakes.slice(0, 1), related: [] } },
+  args: {
+    query: "bolo",
+    answeredQuery: "bolo",
+    response: { tiered: true, matches: cakes.slice(0, 1), related: [] },
+  },
   play: async ({ canvasElement }) => {
     const c = within(canvasElement);
     await expect(
@@ -135,7 +148,11 @@ export const OneMatch: Story = {
 
 /** No match, some related: the plain "no", then the related section. */
 export const NoMatchButRelated: Story = {
-  args: { query: "bolo", response: { tiered: true, matches: [], related: cakeExtras } },
+  args: {
+    query: "bolo",
+    answeredQuery: "bolo",
+    response: { tiered: true, matches: [], related: cakeExtras },
+  },
   play: async ({ canvasElement }) => {
     const c = within(canvasElement);
     await expect(c.getByRole("heading", { name: "Não encontramos “bolo”" })).toBeInTheDocument();
@@ -148,6 +165,7 @@ export const NoMatchButRelated: Story = {
 export const LoadingKeepsTieredResults: Story = {
   args: {
     query: "bolo",
+    answeredQuery: "bolo",
     response: { tiered: true, matches: cakes, related: cakeExtras },
     loading: true,
   },
@@ -162,6 +180,7 @@ export const LoadingKeepsTieredResults: Story = {
 export const FailedKeepsTieredResults: Story = {
   args: {
     query: "bolo",
+    answeredQuery: "bolo",
     response: { tiered: true, matches: cakes, related: cakeExtras },
     error: "Não foi possível buscar. Tente novamente.",
   },
@@ -176,11 +195,49 @@ export const FailedKeepsTieredResults: Story = {
 
 /** Nothing at all: only the plain "no". */
 export const TieredNothing: Story = {
-  args: { query: "bolo", response: { tiered: true, matches: [], related: [] } },
+  args: {
+    query: "bolo",
+    answeredQuery: "bolo",
+    response: { tiered: true, matches: [], related: [] },
+  },
   play: async ({ canvasElement }) => {
     const c = within(canvasElement);
     await expect(c.getByRole("heading", { name: "Não encontramos “bolo”" })).toBeInTheDocument();
     await expect(c.queryByRole("heading", { name: "Você também pode gostar" })).toBeNull();
     await expect(c.queryAllByRole("article")).toHaveLength(0);
+  },
+};
+
+/** A new search failed: the cards and their heading still name the search they answered. */
+export const FailedSearchKeepsPreviousHeading: Story = {
+  args: {
+    query: "maçã",
+    answeredQuery: "bolo",
+    response: { tiered: true, matches: cakes, related: cakeExtras },
+    error: "Não foi possível buscar. Tente novamente.",
+  },
+  play: async ({ canvasElement }) => {
+    const c = within(canvasElement);
+    await expect(
+      c.getByRole("heading", { name: "Encontramos 2 produtos para “bolo”" }),
+    ).toBeInTheDocument();
+    await expect(c.queryByRole("heading", { name: /maçã/ })).toBeNull();
+  },
+};
+
+/** A new search is loading over "no match, some related": the plain "no" still heads it. */
+export const LoadingKeepsNoMatchHeading: Story = {
+  args: {
+    query: "maçã",
+    answeredQuery: "bolo",
+    response: { tiered: true, matches: [], related: cakeExtras },
+    loading: true,
+  },
+  play: async ({ canvasElement }) => {
+    const c = within(canvasElement);
+    const no = c.getByRole("heading", { name: "Não encontramos “bolo”" });
+    const also = c.getByRole("heading", { name: "Você também pode gostar" });
+    await expect(no.compareDocumentPosition(also) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    await expect(c.queryByRole("heading", { name: /maçã/ })).toBeNull();
   },
 };
