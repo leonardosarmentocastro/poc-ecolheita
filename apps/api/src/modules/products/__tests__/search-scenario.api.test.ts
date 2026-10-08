@@ -2,16 +2,22 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Server } from "node:http";
 import { startServer, stopServer } from "@test/helpers";
 import { seedSearchScenario } from "@/db/seed";
-import { SEARCH_SCENARIO } from "@/modules/products/fixtures/search-scenario";
+import { scenarioClassifier } from "@/modules/products/fixtures/scenario-classifier";
+import {
+  EXPECTED_TIERS,
+  SEARCH_SCENARIO,
+  scenarioRow,
+} from "@/modules/products/fixtures/search-scenario";
 
-// Slice 1: no classifier, so every answer is untiered. With 14 rows under the cap of 20,
-// this proves the route serves the scenario; relevance is proven in shortlist.test.ts.
-describe("the search scenario, untiered", () => {
+// Seeded in fixture order: row N of the spec table has id N.
+const idOf = (key: string) => SEARCH_SCENARIO.indexOf(scenarioRow(key)) + 1;
+
+describe("the search scenario, tiered", () => {
   let server: Server;
   let base: string;
 
   beforeAll(async () => {
-    ({ server, base } = await startServer());
+    ({ server, base } = await startServer({ classifier: scenarioClassifier }));
   });
   afterAll(async () => {
     await stopServer(server);
@@ -20,11 +26,17 @@ describe("the search scenario, untiered", () => {
     await seedSearchScenario();
   });
 
-  it.each(["banana", "bolo"])("%s returns every in-stock scenario row, untiered", async (q) => {
-    const body = await (await fetch(`${base}/products/search?q=${q}`)).json();
-    expect(body.tiered).toBe(false);
-    expect(new Set(body.results.map((p: { name: string }) => p.name))).toEqual(
-      new Set(SEARCH_SCENARIO.map((r) => r.name)),
-    );
-  });
+  it.each(["banana", "bolo"] as const)(
+    "%s answers exactly the expected tiers, cheapest first",
+    async (q) => {
+      const body = await (await fetch(`${base}/products/search?q=${q}`)).json();
+      expect(body.tiered).toBe(true);
+      expect(body.matches.map((p: { id: number }) => p.id)).toEqual(
+        EXPECTED_TIERS[q].matches.map(idOf),
+      );
+      expect(body.related.map((p: { id: number }) => p.id)).toEqual(
+        EXPECTED_TIERS[q].related.map(idOf),
+      );
+    },
+  );
 });
