@@ -4,7 +4,7 @@ import { useState } from "react";
 import { SearchForm } from "@/modules/products/components/SearchForm";
 import { SearchResults } from "@/modules/products/components/SearchResults";
 import { useProductSearch } from "@/modules/products/hooks/use-product-search";
-import type { SearchResult } from "@/modules/products/types";
+import type { SearchResponse } from "@/modules/products/types";
 
 /** Container: owns the submitted query and the fetch; renders the presentational pieces. No story. */
 export function SearchPageContainer() {
@@ -17,11 +17,11 @@ export function SearchPageContainer() {
     else setQuery(next);
   };
   // `keepPreviousData` only bridges the pending state; once a query settles as an error,
-  // `data` is undefined. The last good list is kept here so a failure keeps the cards on
+  // `data` is undefined. The last good answer is kept here so a failure keeps the cards on
   // screen (spec § Web, search page states).
   // Adjusted during render rather than in an effect (react.dev, "You might not need an effect").
-  const [lastResults, setLastResults] = useState<SearchResult[]>([]);
-  if (data !== undefined && data !== lastResults) setLastResults(data);
+  const [lastResponse, setLastResponse] = useState<SearchResponse | undefined>(undefined);
+  if (data !== undefined && data !== lastResponse) setLastResponse(data);
 
   return (
     <main className="container mx-auto max-w-3xl p-4 sm:p-8">
@@ -30,7 +30,7 @@ export function SearchPageContainer() {
         <SearchForm onSearch={search} />
         <SearchResults
           query={query}
-          results={data ?? lastResults}
+          response={data ?? lastResponse}
           loading={isFetching}
           error={error ? "Não foi possível buscar. Tente novamente." : null}
         />

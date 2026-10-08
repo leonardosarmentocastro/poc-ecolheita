@@ -9,7 +9,7 @@ Spec(s): docs/superpowers/specs/2026-10-07-search-relevance-tiers-design.md
 
 | slice | plan | branch | parent | status | owns |
 |---|---|---|---|---|---|
-| 1 | docs/superpowers/plans/2026-10-07-search-relevance-tiers-slice-1-shortlist.md | feat/search-relevance-tiers-slice-1-shortlist | feat/search-relevance-tiers | todo | the no-cutoff shortlist — fuzzy (pg_trgm on `search_name`) and meaning (pgvector) lists interleaved into 50 — served untiered as `{ tiered: false, results }` (top 20), with the page's untiered state. |
+| 1 | docs/superpowers/plans/2026-10-07-search-relevance-tiers-slice-1-shortlist.md | feat/search-relevance-tiers-slice-1-shortlist | feat/search-relevance-tiers | open #12 | the no-cutoff shortlist — fuzzy (pg_trgm on `search_name`) and meaning (pgvector) lists interleaved into 50 — served untiered as `{ tiered: false, results }` (top 20), with the page's untiered state. |
 | 2 | docs/superpowers/plans/2026-10-07-search-relevance-tiers-slice-2-tiers.md | feat/search-relevance-tiers-slice-2-tiers | feat/search-relevance-tiers-slice-1-shortlist | todo | the tiered answer — the classifier seam, the scenario classifier, one question per distinct name, `{ tiered: true, matches, related }` ordered by final price then id, the untiered fallback on classifier failure with its log line, and the page's two sections and empty states. |
 | 3 | docs/superpowers/plans/2026-10-07-search-relevance-tiers-slice-3-jev.md | feat/search-relevance-tiers-slice-3-jev | feat/search-relevance-tiers-slice-2-tiers | todo | the Jev classifier — the request, answer parsing, the failure kinds and the 2 s timeout, `TYPESAFE_API_KEY` selecting it, and `tiers:eval` with its agreement and latency gates. |
 
