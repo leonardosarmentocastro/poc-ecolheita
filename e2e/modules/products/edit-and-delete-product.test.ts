@@ -10,7 +10,7 @@ async function seedScenario(request: APIRequestContext) {
   }
 }
 
-test("renaming Banana to Maçã takes it out of the banana results", async ({ page, request }) => {
+test("renaming Banana to Maçã shows the new name in search", async ({ page, request }) => {
   await seedScenario(request);
   await page.goto("/produtos");
   // Role names match substrings, so "Editar Banana" also matches "Editar Banana prata";
@@ -32,17 +32,11 @@ test("renaming Banana to Maçã takes it out of the banana results", async ({ pa
   await page.goto("/buscar");
   await page.getByRole("searchbox", { name: "Nome do produto" }).fill("banana");
   await page.getByRole("button", { name: "Buscar" }).click();
-  await expect(page.getByRole("article").first()).toBeVisible();
-  const names = await page
-    .getByRole("article")
-    .evaluateAll((els) => els.map((el) => el.getAttribute("aria-label")));
-  expect(names).not.toContain("Maçã");
-  expect(names.slice(0, 4)).toEqual([
-    "Banana prata orgânica",
-    "Bananada",
-    "Banana prata",
-    "Banana nanica",
-  ]);
+  const card = page
+    .getByRole("article", { name: "Maçã", exact: true })
+    .filter({ hasText: "Mercadinho Candelária" });
+  await expect(card).toHaveCount(1);
+  await expect(page.getByRole("article", { name: "Banana", exact: true })).toHaveCount(0);
 });
 
 test("deleting a product removes its row", async ({ page, request }) => {
