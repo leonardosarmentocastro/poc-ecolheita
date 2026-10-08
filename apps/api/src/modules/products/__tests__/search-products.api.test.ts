@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Server } from "node:http";
 import { json, startServer, stopServer } from "@test/helpers";
+import { productsRepository } from "@/modules/products/repository";
 import { bananaPrata } from "./fixtures";
 
 const create = (base: string, patch: Partial<typeof bananaPrata>) =>
@@ -8,6 +9,9 @@ const create = (base: string, patch: Partial<typeof bananaPrata>) =>
     method: "POST",
     body: JSON.stringify({ ...bananaPrata, ...patch }),
   }).then((r) => r.json());
+
+const search = async (base: string, q: string) =>
+  (await fetch(`${base}/products/search?q=${encodeURIComponent(q)}`)).json();
 
 describe("GET /products/search", () => {
   let server: Server;
@@ -30,61 +34,53 @@ describe("GET /products/search", () => {
     expect((await fetch(`${base}/products/search?q=${"a".repeat(200)}`)).status).toBe(200);
   });
 
-  it("returns an empty list when nothing clears the threshold", async () => {
-    await create(base, { name: "Detergente" });
-    const res = await fetch(`${base}/products/search?q=banana`);
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual([]);
+  it("answers untiered, with finalPrice and without similarity, embedding or searchName", async () => {
+    await create(base, { name: "Banana prata" });
+    const body = await search(base, "banana");
+    expect(body.tiered).toBe(false);
+    const [hit] = body.results;
+    expect(hit.finalPrice).toBe(350);
+    expect(hit).not.toHaveProperty("similarity");
+    expect(hit).not.toHaveProperty("embedding");
+    expect(hit).not.toHaveProperty("searchName");
   });
 
-  it("returns matches with finalPrice and similarity rounded to four places, without embedding", async () => {
-    await create(base, { name: "Banana prata" });
-    const [hit] = await (await fetch(`${base}/products/search?q=banana`)).json();
-    expect(hit.finalPrice).toBe(350);
-    expect(hit.similarity).toBe(Number(hit.similarity.toFixed(4)));
-    expect(hit).not.toHaveProperty("embedding");
+  it("has no cutoff: an unrelated product is still returned untiered", async () => {
+    const detergent = await create(base, { name: "Detergente" });
+    const body = await search(base, "banana");
+    expect(body.results.map((p: { id: number }) => p.id)).toContain(detergent.id);
+  });
+
+  it("answers an accent-only or punctuation-only query", async () => {
+    await create(base, { name: "Maçã" });
+    for (const q of ["ç", "!!!"]) {
+      const res = await fetch(`${base}/products/search?q=${encodeURIComponent(q)}`);
+      expect(res.status).toBe(200);
+      expect((await res.json()).tiered).toBe(false);
+    }
   });
 
   it("hides zero-stock products from search but not from the list", async () => {
     const soldOut = await create(base, { name: "Banana", price: 100, quantity: 0 });
     const inStock = await create(base, { name: "Banana prata" });
-    const hits = await (await fetch(`${base}/products/search?q=banana`)).json();
-    const ids = hits.map((h: { id: number }) => h.id);
-    expect(ids).toContain(inStock.id); // the filter hides stock 0, not everything
+    const ids = (await search(base, "banana")).results.map((h: { id: number }) => h.id);
+    expect(ids).toContain(inStock.id);
     expect(ids).not.toContain(soldOut.id);
     const list = await (await fetch(`${base}/products`)).json();
     expect(list.map((p: { id: number }) => p.id)).toContain(soldOut.id);
   });
 
-  it("orders by final price, then similarity, then id", async () => {
-    const expensive = await create(base, { name: "Banana", price: 1000, discountPercentage: 0 });
-    const cheapLessSimilar = await create(base, {
-      name: "Banana nanica",
-      price: 500,
-      discountPercentage: 0,
-    });
-    const cheapMoreSimilar = await create(base, {
-      name: "Banana",
-      price: 500,
-      discountPercentage: 0,
-    });
-    const cheapMoreSimilarLater = await create(base, {
-      name: "Banana",
-      price: 500,
-      discountPercentage: 0,
-    });
-    const hits = await (await fetch(`${base}/products/search?q=banana`)).json();
-    expect(hits.map((h: { id: number }) => h.id)).toEqual([
-      cheapMoreSimilar.id,
-      cheapMoreSimilarLater.id,
-      cheapLessSimilar.id,
-      expensive.id,
-    ]);
+  it("returns the repository's shortlist order, cut to 20", async () => {
+    for (let i = 0; i < 25; i++)
+      await create(base, { name: i % 2 ? "Banana" : "Bolo", price: 100 + i });
+    const body = await search(base, "banana");
+    const expected = (await productsRepository.shortlist("banana")).slice(0, 20).map((p) => p.id);
+    expect(body.results.map((p: { id: number }) => p.id)).toEqual(expected);
+    expect(body.results).toHaveLength(20);
   });
 
-  it("caps at 20", async () => {
-    for (let i = 0; i < 25; i++) await create(base, { name: "Banana", price: 100 + i });
-    const hits = await (await fetch(`${base}/products/search?q=banana`)).json();
-    expect(hits).toHaveLength(20);
+  it("answers an empty list when nothing is in stock", async () => {
+    await create(base, { name: "Banana", quantity: 0 });
+    expect(await search(base, "banana")).toEqual({ tiered: false, results: [] });
   });
 });

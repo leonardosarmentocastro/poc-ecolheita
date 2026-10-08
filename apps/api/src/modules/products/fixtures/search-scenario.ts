@@ -148,27 +148,6 @@ export const EXPECTED_TIERS: Record<ScenarioQuery, { matches: string[]; related:
   },
 };
 
-/** Removed in slice 1 Task 5 with the threshold tests. */
-export const BANANA_QUERY = "banana";
-
-/** Removed in slice 1 Task 5 with the threshold tests. */
-/** Hard tier: these five, in this order (final price 1,60 · 2,40 · 3,00 · 3,50 · 3,60). */
-export const EXPECTED_MATCH_KEYS_IN_ORDER = [
-  "ceasa-banana-prata-organica",
-  "candelaria-bananada",
-  "candelaria-banana",
-  "vec-banana-prata",
-  "sao-jose-banana-nanica",
-];
-
-/** Removed in slice 1 Task 5 with the threshold tests. */
-/** Hard tier: never in the results. */
-export const HARD_DECOY_KEYS = ["vec-maca-argentina", "ceasa-carne-moida"];
-
-/** Removed in slice 1 Task 5 with the threshold tests. */
-/** Expected-failure candidate: absent if the threshold can separate it. */
-export const SOFT_DECOY_KEY = "sao-jose-bolo-de-banana";
-
 export const scenarioRow = (key: string): ScenarioRow => {
   const row = SEARCH_SCENARIO.find((r) => r.key === key);
   if (!row) throw new Error(`unknown scenario key ${key}`);

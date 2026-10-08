@@ -1,8 +1,8 @@
 import type { Request, Response, NextFunction } from "express";
-import { env } from "@/config/env";
-import { embed, normalizeForEmbedding } from "@/modules/embeddings";
 import { productsRepository } from "@/modules/products/repository";
+import { UNTIERED_CAP } from "@/modules/products/search-constants";
 import { searchQuerySchema } from "@/modules/products/search-schema";
+import type { SearchResponse } from "@/modules/products/types";
 
 export const searchProductsResolver = async (
   req: Request,
@@ -11,12 +11,9 @@ export const searchProductsResolver = async (
 ): Promise<void> => {
   try {
     const { q } = searchQuerySchema.parse(req.query);
-    const queryVector = await embed(normalizeForEmbedding(q));
-    res.status(200).json(
-      await productsRepository.search(queryVector, {
-        threshold: env.SEARCH_SIMILARITY_THRESHOLD,
-      }),
-    );
+    const shortlist = await productsRepository.shortlist(q);
+    const body: SearchResponse = { tiered: false, results: shortlist.slice(0, UNTIERED_CAP) };
+    res.status(200).json(body);
   } catch (err) {
     next(err);
   }

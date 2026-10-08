@@ -7,5 +7,5 @@ export type ProductRow = Omit<InferSelectModel<typeof products>, "embedding" | "
 /** The API's product: the row plus the derived final price. */
 export type Product = ProductRow & { finalPrice: number };
 
-/** A search hit: the product plus its cosine similarity to the query, rounded to 4 places. */
-export type SearchResult = Product & { similarity: number };
+/** A search answer (spec § API contract). Slice 2 adds the tiered branch. */
+export type SearchResponse = { tiered: false; results: Product[] };
