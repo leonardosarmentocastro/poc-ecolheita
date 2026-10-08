@@ -1,14 +1,14 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Server } from "node:http";
 import { startServer, stopServer } from "@test/helpers";
-import { seedBananaScenario } from "@/db/seed";
+import { seedSearchScenario } from "@/db/seed";
 import {
   BANANA_QUERY,
   EXPECTED_MATCH_KEYS_IN_ORDER,
   HARD_DECOY_KEYS,
   SOFT_DECOY_KEY,
   scenarioRow,
-} from "@/modules/products/fixtures/banana-scenario";
+} from "@/modules/products/fixtures/search-scenario";
 import { productsRepository } from "@/modules/products/repository";
 
 type Hit = { id: number; name: string; shopName: string; similarity: number };
@@ -28,7 +28,7 @@ describe("the banana scenario", () => {
   });
 
   beforeEach(async () => {
-    await seedBananaScenario();
+    await seedSearchScenario();
     const all = await productsRepository.findAll();
     idOf = (key) => {
       const row = scenarioRow(key);

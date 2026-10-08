@@ -3,19 +3,19 @@ import { test, expect } from "../../fixtures/test";
 import { seedProduct } from "../../fixtures/seed";
 import {
   BANANA_QUERY,
-  BANANA_SCENARIO,
+  SEARCH_SCENARIO,
   EXPECTED_MATCH_KEYS_IN_ORDER,
   HARD_DECOY_KEYS,
   SOFT_DECOY_KEY,
   scenarioRow,
-} from "../../../apps/api/src/modules/products/fixtures/banana-scenario";
+} from "../../../apps/api/src/modules/products/fixtures/search-scenario";
 
 // Resolved at load, not in the expected-failure body: a broken fixture must fail the file,
 // not pass as the expected failure.
 const SOFT_DECOY_NAME = scenarioRow(SOFT_DECOY_KEY).name;
 
 async function seedScenario(request: APIRequestContext) {
-  for (const row of BANANA_SCENARIO) {
+  for (const row of SEARCH_SCENARIO) {
     const { key: _key, ...input } = row;
     await seedProduct(request, input);
   }

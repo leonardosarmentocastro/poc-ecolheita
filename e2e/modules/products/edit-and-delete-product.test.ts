@@ -1,10 +1,10 @@
 import type { APIRequestContext } from "@playwright/test";
 import { test, expect } from "../../fixtures/test";
 import { seedProduct } from "../../fixtures/seed";
-import { BANANA_SCENARIO } from "../../../apps/api/src/modules/products/fixtures/banana-scenario";
+import { SEARCH_SCENARIO } from "../../../apps/api/src/modules/products/fixtures/search-scenario";
 
 async function seedScenario(request: APIRequestContext) {
-  for (const row of BANANA_SCENARIO) {
+  for (const row of SEARCH_SCENARIO) {
     const { key: _key, ...input } = row;
     await seedProduct(request, input);
   }
