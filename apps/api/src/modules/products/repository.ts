@@ -1,14 +1,16 @@
-import { and, asc, cosineDistance, desc, eq, gt, gte, sql } from "drizzle-orm";
+import { and, asc, cosineDistance, desc, eq, gt, gte, inArray, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { embed, normalizeForEmbedding } from "@/modules/embeddings";
 import { products } from "@/modules/products/model";
 import { PRODUCT_PUBLIC_COLUMNS } from "@/modules/products/public-columns";
+import { LIST_SIZE, SHORTLIST_SIZE } from "@/modules/products/search-constants";
 import {
   INT4_MAX,
   type CreateProductInput,
   type UpdateProductInput,
 } from "@/modules/products/schema";
 import type { Product, SearchResult } from "@/modules/products/types";
+import { interleave } from "@/modules/products/utils/interleave";
 import { normalizeForSearch } from "@/modules/products/utils/normalize-for-search";
 import { toProduct } from "@/modules/products/utils/to-product";
 
@@ -101,6 +103,38 @@ export const productsRepository = {
       .from(products)
       .where(eq(products.id, id));
     return row?.searchName;
+  },
+
+  /**
+   * The search shortlist (spec § The flow, § Merge): the fuzzy list (trigram word distance on
+   * search_name) and the meaning list (cosine distance on the vector), each the LIST_SIZE
+   * closest in-stock rows with no cutoff, ties by id, interleaved. Never a threshold.
+   */
+  async shortlist(
+    query: string,
+    { size = SHORTLIST_SIZE }: { size?: number } = {},
+  ): Promise<Product[]> {
+    const searchText = normalizeForSearch(query);
+    const vector = JSON.stringify(await embed(normalizeForEmbedding(query)));
+    const { rows } = await db.execute<{ id: number; list: "f" | "m" }>(sql`
+      (SELECT id, 'f' AS list FROM products WHERE quantity > 0
+        ORDER BY ${searchText}::text <<-> search_name, id LIMIT ${LIST_SIZE})
+      UNION ALL
+      (SELECT id, 'm' AS list FROM products WHERE quantity > 0
+        ORDER BY embedding <=> ${vector}::vector, id LIMIT ${LIST_SIZE})
+    `);
+    const ids = interleave(
+      rows.filter((r) => r.list === "f").map((r) => r.id),
+      rows.filter((r) => r.list === "m").map((r) => r.id),
+      size,
+    );
+    if (ids.length === 0) return [];
+    const found = await db
+      .select(PRODUCT_PUBLIC_COLUMNS)
+      .from(products)
+      .where(inArray(products.id, ids));
+    const byId = new Map(found.map((row) => [row.id, toProduct(row)]));
+    return ids.flatMap((id) => byId.get(id) ?? []);
   },
 
   /**
