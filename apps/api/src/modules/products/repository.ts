@@ -9,21 +9,22 @@ import {
   type UpdateProductInput,
 } from "@/modules/products/schema";
 import type { Product, SearchResult } from "@/modules/products/types";
+import { normalizeForSearch } from "@/modules/products/utils/normalize-for-search";
 import { toProduct } from "@/modules/products/utils/to-product";
 
 /** An id Postgres can hold in an `integer` column; anything else is simply not found. */
 const isProductId = (id: number): boolean => Number.isInteger(id) && id >= 1 && id <= INT4_MAX;
 
 /**
- * Every products write goes through here, and every write embeds: a product without a
- * vector never exists (apps/api/AGENTS.md, the one deviation from "queries only").
+ * Every products write goes through here, and every write embeds and writes search_name: a
+ * product without a vector never exists (apps/api/AGENTS.md, the one deviation from "queries only").
  */
 export const productsRepository = {
   async create(input: CreateProductInput): Promise<Product> {
     const embedding = await embed(normalizeForEmbedding(input.name));
     const [row] = await db
       .insert(products)
-      .values({ ...input, embedding })
+      .values({ ...input, embedding, searchName: normalizeForSearch(input.name) })
       .returning(PRODUCT_PUBLIC_COLUMNS);
     return toProduct(row);
   },
@@ -60,10 +61,16 @@ export const productsRepository = {
       input.name !== undefined &&
       normalizeForEmbedding(input.name) !== normalizeForEmbedding(current.name);
     const embedding = renamed ? await embed(normalizeForEmbedding(input.name!)) : undefined;
+    const searchName = renamed ? normalizeForSearch(input.name!) : undefined;
 
     const [row] = await db
       .update(products)
-      .set({ ...input, ...(embedding ? { embedding } : {}), updatedAt: new Date() })
+      .set({
+        ...input,
+        ...(embedding ? { embedding } : {}),
+        ...(searchName !== undefined ? { searchName } : {}),
+        updatedAt: new Date(),
+      })
       .where(eq(products.id, id))
       .returning(PRODUCT_PUBLIC_COLUMNS);
     return row ? toProduct(row) : undefined;
@@ -85,6 +92,15 @@ export const productsRepository = {
       .from(products)
       .where(eq(products.id, id));
     return row?.embedding ?? undefined;
+  },
+
+  /** The stored search_name, for tests: it is never part of the public product. */
+  async findSearchName(id: number): Promise<string | undefined> {
+    const [row] = await db
+      .select({ searchName: products.searchName })
+      .from(products)
+      .where(eq(products.id, id));
+    return row?.searchName;
   },
 
   /**
