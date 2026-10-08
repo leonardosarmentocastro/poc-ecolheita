@@ -8,7 +8,7 @@ LANGUAGE sql IMMUTABLE STRICT AS $$
       regexp_replace(lower(regexp_replace(replace(name, chr(160), ' '), '^\s+|\s+$', '', 'g')), '\s+', ' ', 'g'),
       NFD
     ),
-    '[̀-ͯ]', '', 'g'
+    '[\u0300-\u036f]', '', 'g'
   )
 $$;--> statement-breakpoint
 ALTER TABLE "products" ADD COLUMN "search_name" text;--> statement-breakpoint
