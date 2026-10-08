@@ -1,7 +1,11 @@
 import type { APIRequestContext } from "@playwright/test";
 import { test, expect } from "../../fixtures/test";
 import { seedProduct } from "../../fixtures/seed";
-import { SEARCH_SCENARIO } from "../../../apps/api/src/modules/products/fixtures/search-scenario";
+import {
+  EXPECTED_TIERS,
+  SEARCH_SCENARIO,
+  scenarioRow,
+} from "../../../apps/api/src/modules/products/fixtures/search-scenario";
 
 async function seedScenario(request: APIRequestContext) {
   for (const row of SEARCH_SCENARIO) {
@@ -10,38 +14,50 @@ async function seedScenario(request: APIRequestContext) {
   }
 }
 
-test.describe("searching for banana", () => {
+const nameOf = (key: string) => scenarioRow(key).name;
+
+async function searchFor(page: import("@playwright/test").Page, q: string) {
+  await page.getByRole("searchbox", { name: "Nome do produto" }).fill(q);
+  await page.getByRole("button", { name: "Buscar" }).click();
+}
+
+test.describe("searching for bolo", () => {
   test.beforeEach(async ({ request, page }) => {
     await seedScenario(request);
     await page.goto("/buscar");
     await expect(page.getByText("Digite o nome de um produto")).toBeVisible();
-    await page.getByRole("searchbox", { name: "Nome do produto" }).fill("banana");
-    await page.getByRole("button", { name: "Buscar" }).click();
-    await expect(page.getByRole("article").first()).toBeVisible();
+    await searchFor(page, "bolo");
+    await expect(
+      page.getByRole("heading", { name: "Encontramos 3 produtos para “bolo”" }),
+    ).toBeVisible();
   });
 
-  test("the answer is untiered: the notice and the banana offers, without similarity", async ({
-    page,
-  }) => {
-    await expect(
-      page.getByText("Não conseguimos organizar os resultados por relevância"),
-    ).toBeVisible();
-    const names = await page
-      .getByRole("article")
-      .evaluateAll((els) => els.map((el) => el.getAttribute("aria-label")));
-    for (const name of ["Banana", "Banana prata", "Banana nanica", "Banana prata orgânica"])
-      expect(names).toContain(name);
-    await expect(page.getByText(/similaridade/)).toHaveCount(0);
+  test("the cakes, then the related products, cheapest first, and no battery", async ({ page }) => {
+    const found = page.getByRole("heading", { name: "Encontramos 3 produtos para “bolo”" });
+    const also = page.getByRole("heading", { name: "Você também pode gostar" });
+    await expect(also).toBeVisible();
+    const order = await page
+      .locator("article, h2")
+      .evaluateAll((els) => els.map((el) => el.getAttribute("aria-label") ?? el.textContent));
+    const after = (h: string) => order.indexOf(h);
+    const matches = EXPECTED_TIERS.bolo.matches.map(nameOf);
+    const related = EXPECTED_TIERS.bolo.related.map(nameOf);
+    expect(order.filter((x) => matches.includes(x!))).toEqual(matches);
+    expect(order.filter((x) => related.includes(x!))).toEqual(related);
+    expect(Math.min(...related.map(after))).toBeGreaterThan(after((await also.textContent())!));
+    expect(Math.max(...matches.map(after))).toBeLessThan(after((await also.textContent())!));
+    expect(after((await found.textContent())!)).toBeLessThan(Math.min(...matches.map(after)));
+    await expect(page.getByRole("article", { name: "Pilha AA" })).toHaveCount(0);
+    await expect(page.getByText(/Não conseguimos organizar/)).toHaveCount(0);
   });
 
   // Relies on `retry: false` in useProductSearch: the alert must appear inside Playwright's
   // five-second expect window, not after react-query's default retries.
   test("a failed search shows an error and keeps the previous results", async ({ page }) => {
     const before = await page.getByRole("article").count();
-    expect(before).toBeGreaterThanOrEqual(4);
+    expect(before).toBe(5);
     await page.route("**/products/search**", (route) => route.abort());
-    await page.getByRole("searchbox", { name: "Nome do produto" }).fill("maçã");
-    await page.getByRole("button", { name: "Buscar" }).click();
+    await searchFor(page, "maçã");
     // Scoped to the page body: Next's route announcer is a second, empty `alert` region.
     await expect(page.getByRole("main").getByRole("alert")).toHaveText(
       "Não foi possível buscar. Tente novamente.",
@@ -59,9 +75,7 @@ test.describe("retrying a failed search", () => {
     await seedScenario(request);
     await page.goto("/buscar");
     await page.route("**/products/search**", (route) => route.abort());
-    await page.getByRole("searchbox", { name: "Nome do produto" }).fill("banana");
-    await page.getByRole("button", { name: "Buscar" }).click();
-    // Scoped to the page body: Next's route announcer is a second, empty `alert` region.
+    await searchFor(page, "bolo");
     const alert = page.getByRole("main").getByRole("alert");
     await expect(alert).toHaveText("Não foi possível buscar. Tente novamente.");
     await expect(page.getByRole("article")).toHaveCount(0);
@@ -69,6 +83,6 @@ test.describe("retrying a failed search", () => {
     await page.unroute("**/products/search**");
     await page.getByRole("button", { name: "Buscar" }).click();
     await expect(alert).toHaveCount(0);
-    await expect(page.getByRole("article", { name: "Banana prata orgânica" })).toBeVisible();
+    await expect(page.getByRole("article").first()).toContainText("R$ 8,00");
   });
 });

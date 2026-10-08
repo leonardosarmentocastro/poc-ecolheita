@@ -15,11 +15,12 @@ that contradicts them is a bug. Workflow conventions live in the `AGENTS.md` fil
 - **Duplicates are two offers.** Two rows with the same shop and name are two offers and
   both are listed; there is no uniqueness rule. A shop may sell the same item in several
   lots (issue #3), and this matches it.
-- **Same product across shops** — "banana", "banana prata" and "banana nanica" count as the
-  same product for a shopper; cultivars are included (recall over precision, for the
-  food-waste use case). A product made of banana, such as "Bananada", also counts as a
-  match for "banana"; "bolo de banana" is the known hard case, a different product the
-  search may still return.
+- **Relevance tier** — for one search, every product is a **match** (it *is* the thing
+  searched for, or a kind, variety or form of it you would accept as a yes: "Banana prata"
+  for banana), **related** (made from it, used with it, or plausibly wanted by someone looking
+  for it: "Bananada" and "Bolo de banana" for banana; "Mistura para bolo" and "Forma de bolo"
+  for bolo) or **unrelated** (everything else, never shown in a tiered answer). Bananada is
+  related to banana, not a match: it is made from banana.
 
 ## Search
 
@@ -37,8 +38,13 @@ that contradicts them is a bug. Workflow conventions live in the `AGENTS.md` fil
   `search_name`) and the meaning list (cosine distance between the vectors), each the 50
   closest in-stock rows ordered by distance then id, interleaved — fuzzy 1, meaning 1,
   fuzzy 2, … — skipping duplicates, up to 50.
-- **Ranking (untiered)** — an untiered answer is the first 20 of the shortlist, in
-  shortlist order.
+- **Tiered answer** — matches, then related; inside each, final price ascending, then id.
+  Distance is reserved as the third key (issue #3). Products with the same name (after
+  trimming, lowercasing and collapsing spaces, accents kept) are one question to the
+  classifier and always share a tier.
+- **Untiered answer** — when no classifier is configured or it fails, the first 20 of the
+  shortlist, under a notice that they are not organised by relevance. It may include
+  unrelated products.
 - **Zero stock** — a product with `quantity = 0` is never a search result; it is still listed
   on the products page.
 - **A product without a vector never exists** — the repository embeds and writes
