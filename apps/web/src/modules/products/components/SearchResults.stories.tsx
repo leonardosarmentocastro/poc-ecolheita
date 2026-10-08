@@ -26,6 +26,7 @@ const meta = {
   tags: ["autodocs"],
   args: {
     query: "banana",
+    answeredQuery: "banana",
     response: { tiered: false, results: bananas },
     loading: false,
     error: null,
@@ -37,7 +38,7 @@ type Story = StoryObj<typeof meta>;
 
 /** Before the first search: a prompt, no cards, no empty state. */
 export const Idle: Story = {
-  args: { query: "", response: undefined },
+  args: { query: "", answeredQuery: "", response: undefined },
   play: async ({ canvasElement }) => {
     const c = within(canvasElement);
     await expect(c.getByText("Digite o nome de um produto")).toBeInTheDocument();
@@ -82,12 +83,161 @@ export const FailedKeepsPreviousResults: Story = {
 
 /** Untiered and empty: the "não encontramos" heading, no notice. */
 export const UntieredNothing: Story = {
-  args: { query: "detergente", response: { tiered: false, results: [] } },
+  args: {
+    query: "detergente",
+    answeredQuery: "detergente",
+    response: { tiered: false, results: [] },
+  },
   play: async ({ canvasElement }) => {
     const c = within(canvasElement);
     await expect(
       c.getByRole("heading", { name: "Não encontramos “detergente”" }),
     ).toBeInTheDocument();
     await expect(c.queryByText(/Não conseguimos organizar/)).toBeNull();
+  },
+};
+
+const cakes = [
+  product(10, "Padaria Pão Quente", "Fatia de bolo red velvet", 800),
+  product(7, "Hortifruti São José", "Bolo de banana", 840),
+];
+const cakeExtras = [product(11, "Mercadinho Candelária", "Mistura para bolo de chocolate", 900)];
+const names = (el: HTMLElement) =>
+  within(el)
+    .getAllByRole("article")
+    .map((a) => a.getAttribute("aria-label"));
+
+/** Matches and related: two headed sections, each in the order given. */
+export const MatchesAndRelated: Story = {
+  args: {
+    query: "bolo",
+    answeredQuery: "bolo",
+    response: { tiered: true, matches: cakes, related: cakeExtras },
+  },
+  play: async ({ canvasElement }) => {
+    const c = within(canvasElement);
+    const found = c.getByRole("heading", { name: "Encontramos 2 produtos para “bolo”" });
+    const also = c.getByRole("heading", { name: "Você também pode gostar" });
+    await expect(
+      found.compareDocumentPosition(also) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    await expect(names(canvasElement)).toEqual([
+      "Fatia de bolo red velvet",
+      "Bolo de banana",
+      "Mistura para bolo de chocolate",
+    ]);
+    await expect(c.queryByText(/Não conseguimos organizar/)).toBeNull();
+  },
+};
+
+/** One match: the singular. */
+export const OneMatch: Story = {
+  args: {
+    query: "bolo",
+    answeredQuery: "bolo",
+    response: { tiered: true, matches: cakes.slice(0, 1), related: [] },
+  },
+  play: async ({ canvasElement }) => {
+    const c = within(canvasElement);
+    await expect(
+      c.getByRole("heading", { name: "Encontramos 1 produto para “bolo”" }),
+    ).toBeInTheDocument();
+    await expect(c.queryByRole("heading", { name: "Você também pode gostar" })).toBeNull();
+  },
+};
+
+/** No match, some related: the plain "no", then the related section. */
+export const NoMatchButRelated: Story = {
+  args: {
+    query: "bolo",
+    answeredQuery: "bolo",
+    response: { tiered: true, matches: [], related: cakeExtras },
+  },
+  play: async ({ canvasElement }) => {
+    const c = within(canvasElement);
+    await expect(c.getByRole("heading", { name: "Não encontramos “bolo”" })).toBeInTheDocument();
+    await expect(c.getByRole("heading", { name: "Você também pode gostar" })).toBeInTheDocument();
+    await expect(names(canvasElement)).toEqual(["Mistura para bolo de chocolate"]);
+  },
+};
+
+/** Loading or failing over a tiered answer keeps its sections and cards on screen. */
+export const LoadingKeepsTieredResults: Story = {
+  args: {
+    query: "bolo",
+    answeredQuery: "bolo",
+    response: { tiered: true, matches: cakes, related: cakeExtras },
+    loading: true,
+  },
+  play: async ({ canvasElement }) => {
+    const c = within(canvasElement);
+    await expect(c.getByRole("status")).toHaveTextContent("Buscando…");
+    await expect(c.getByRole("heading", { name: "Você também pode gostar" })).toBeInTheDocument();
+    await expect(c.getAllByRole("article")).toHaveLength(3);
+  },
+};
+
+export const FailedKeepsTieredResults: Story = {
+  args: {
+    query: "bolo",
+    answeredQuery: "bolo",
+    response: { tiered: true, matches: cakes, related: cakeExtras },
+    error: "Não foi possível buscar. Tente novamente.",
+  },
+  play: async ({ canvasElement }) => {
+    const c = within(canvasElement);
+    await expect(c.getByRole("alert")).toHaveTextContent(
+      "Não foi possível buscar. Tente novamente.",
+    );
+    await expect(c.getAllByRole("article")).toHaveLength(3);
+  },
+};
+
+/** Nothing at all: only the plain "no". */
+export const TieredNothing: Story = {
+  args: {
+    query: "bolo",
+    answeredQuery: "bolo",
+    response: { tiered: true, matches: [], related: [] },
+  },
+  play: async ({ canvasElement }) => {
+    const c = within(canvasElement);
+    await expect(c.getByRole("heading", { name: "Não encontramos “bolo”" })).toBeInTheDocument();
+    await expect(c.queryByRole("heading", { name: "Você também pode gostar" })).toBeNull();
+    await expect(c.queryAllByRole("article")).toHaveLength(0);
+  },
+};
+
+/** A new search failed: the cards and their heading still name the search they answered. */
+export const FailedSearchKeepsPreviousHeading: Story = {
+  args: {
+    query: "maçã",
+    answeredQuery: "bolo",
+    response: { tiered: true, matches: cakes, related: cakeExtras },
+    error: "Não foi possível buscar. Tente novamente.",
+  },
+  play: async ({ canvasElement }) => {
+    const c = within(canvasElement);
+    await expect(
+      c.getByRole("heading", { name: "Encontramos 2 produtos para “bolo”" }),
+    ).toBeInTheDocument();
+    await expect(c.queryByRole("heading", { name: /maçã/ })).toBeNull();
+  },
+};
+
+/** A new search is loading over "no match, some related": the plain "no" still heads it. */
+export const LoadingKeepsNoMatchHeading: Story = {
+  args: {
+    query: "maçã",
+    answeredQuery: "bolo",
+    response: { tiered: true, matches: [], related: cakeExtras },
+    loading: true,
+  },
+  play: async ({ canvasElement }) => {
+    const c = within(canvasElement);
+    const no = c.getByRole("heading", { name: "Não encontramos “bolo”" });
+    const also = c.getByRole("heading", { name: "Você também pode gostar" });
+    await expect(no.compareDocumentPosition(also) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    await expect(c.queryByRole("heading", { name: /maçã/ })).toBeNull();
   },
 };

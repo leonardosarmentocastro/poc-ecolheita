@@ -1,7 +1,9 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Server } from "node:http";
 import { json, startServer, stopServer } from "@test/helpers";
 import { productsRepository } from "@/modules/products/repository";
+import { ClassifierError, type Classifier } from "@/modules/relevance";
+import { scenarioClassifier } from "@/modules/products/fixtures/scenario-classifier";
 import { bananaPrata } from "./fixtures";
 
 const create = (base: string, patch: Partial<typeof bananaPrata>) =>
@@ -82,5 +84,81 @@ describe("GET /products/search", () => {
   it("answers an empty list when nothing is in stock", async () => {
     await create(base, { name: "Banana", quantity: 0 });
     expect(await search(base, "banana")).toEqual({ tiered: false, results: [] });
+  });
+});
+
+describe("GET /products/search with a classifier", () => {
+  afterEach(() => vi.restoreAllMocks());
+  const servers: Server[] = [];
+  const serve = async (classifier: Classifier) => {
+    const s = await startServer({ classifier });
+    servers.push(s.server);
+    return s.base;
+  };
+  afterAll(async () => {
+    for (const s of servers) await stopServer(s);
+  });
+
+  it("answers untiered, in shortlist order, and logs only the failure kind when it fails", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const failing: Classifier = {
+      classify: async () => Promise.reject(new ClassifierError("timeout")),
+    };
+    const b = await serve(failing);
+    for (let i = 0; i < 3; i++) await create(b, { name: ["Banana", "Bolo", "Pilha"][i] });
+    const body = await search(b, "segredo-da-busca");
+    const expected = (await productsRepository.shortlist("segredo-da-busca")).map((p) => p.id);
+    expect(body).toMatchObject({ tiered: false });
+    expect(body.results.map((p: { id: number }) => p.id)).toEqual(expected);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0][0])).toBe("search answered untiered: classifier timeout");
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("segredo-da-busca");
+  });
+
+  it("answers untiered when the classifier leaves a candidate without a tier", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const b = await serve({ classify: async () => new Map() });
+    await create(b, { name: "Banana" });
+    expect((await search(b, "banana")).tiered).toBe(false);
+    expect(String(warn.mock.calls[0][0])).toBe("search answered untiered: classifier invalid");
+  });
+
+  it("answers untiered, not 500, when the classifier has a bug", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const b = await serve({
+      classify: async () => {
+        throw new TypeError("boom");
+      },
+    });
+    await create(b, { name: "Banana" });
+    const res = await fetch(`${b}/products/search?q=banana`);
+    expect(res.status).toBe(200);
+    expect((await res.json()).tiered).toBe(false);
+    expect(String(warn.mock.calls[0][0])).toBe("search answered untiered: classifier unexpected");
+  });
+
+  it("logs nothing when no classifier is configured", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { server: plain, base: b } = await startServer();
+    servers.push(plain);
+    await create(b, { name: "Banana" });
+    expect((await search(b, "banana")).tiered).toBe(false);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("answers an empty tiered list without asking when nothing is in stock", async () => {
+    const classify = vi.fn();
+    const b = await serve({ classify });
+    await create(b, { name: "Banana", quantity: 0 });
+    expect(await search(b, "banana")).toEqual({ tiered: true, matches: [], related: [] });
+    expect(classify).not.toHaveBeenCalled();
+  });
+
+  it("puts two offers of the same name in the same section", async () => {
+    const b = await serve(scenarioClassifier);
+    const one = await create(b, { name: "Banana", price: 300 });
+    const two = await create(b, { name: "banana ", price: 200 });
+    const body = await search(b, "banana");
+    expect(body.matches.map((p: { id: number }) => p.id)).toEqual([two.id, one.id]);
   });
 });
