@@ -1,9 +1,11 @@
 "use client";
 
-import { Text } from "@mantine/core";
+import { Text, Title } from "@mantine/core";
 import { SearchEmptyState } from "@/modules/products/components/SearchEmptyState";
 import { SearchResultCard } from "@/modules/products/components/SearchResultCard";
 import type { SearchResponse } from "@/modules/products/types";
+
+const plural = (n: number) => (n === 1 ? "1 produto" : `${n} produtos`);
 
 export interface SearchResultsProps {
   /** "" means no search has been submitted yet (idle). */
@@ -19,7 +21,6 @@ export function SearchResults({ query, response, loading, error }: SearchResults
   if (query === "") {
     return <Text c="dimmed">Digite o nome de um produto</Text>;
   }
-  const results = response?.results ?? [];
   const settled = !loading && !error && response !== undefined;
   return (
     <div className="grid gap-3">
@@ -33,13 +34,41 @@ export function SearchResults({ query, response, loading, error }: SearchResults
           {error}
         </Text>
       )}
-      {settled && results.length === 0 && <SearchEmptyState query={query} />}
-      {results.length > 0 && (
-        <Text c="dimmed">Não conseguimos organizar os resultados por relevância</Text>
+      {response?.tiered === false && (
+        <>
+          {settled && response.results.length === 0 && <SearchEmptyState query={query} />}
+          {response.results.length > 0 && (
+            <Text c="dimmed">Não conseguimos organizar os resultados por relevância</Text>
+          )}
+          {response.results.map((p) => (
+            <SearchResultCard key={p.id} product={p} />
+          ))}
+        </>
       )}
-      {results.map((p) => (
-        <SearchResultCard key={p.id} product={p} />
-      ))}
+      {response?.tiered === true && (
+        <>
+          {response.matches.length > 0 ? (
+            <Title order={2} size="h4">
+              Encontramos {plural(response.matches.length)} para “{query}”
+            </Title>
+          ) : (
+            settled && <SearchEmptyState query={query} />
+          )}
+          {response.matches.map((p) => (
+            <SearchResultCard key={p.id} product={p} />
+          ))}
+          {response.related.length > 0 && (
+            <>
+              <Title order={2} size="h4">
+                Você também pode gostar
+              </Title>
+              {response.related.map((p) => (
+                <SearchResultCard key={p.id} product={p} />
+              ))}
+            </>
+          )}
+        </>
+      )}
     </div>
   );
 }

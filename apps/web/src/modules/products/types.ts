@@ -12,8 +12,9 @@ export interface Product {
   updatedAt: string;
 }
 
-/** A search answer (API contract). Slice 2 adds the tiered branch. */
-export type SearchResponse = { tiered: false; results: Product[] };
+/** A search answer (API contract). */
+export type SearchResponse =
+  { tiered: true; matches: Product[]; related: Product[] } | { tiered: false; results: Product[] };
 
 export interface CreateProductInput {
   shopName: string;
