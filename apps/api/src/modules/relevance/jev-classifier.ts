@@ -48,7 +48,11 @@ export const createJevClassifier = ({
     } catch (err) {
       throw new ClassifierError(isAbort(err) ? "timeout" : "unexpected");
     }
-    if (!res.ok) throw new ClassifierError("status");
+    if (!res.ok) {
+      // Release the connection: an unread body holds the socket until GC.
+      await res.body?.cancel().catch(() => {});
+      throw new ClassifierError("status");
+    }
 
     let parsed: { answers?: Record<string, { choice?: unknown }> };
     try {

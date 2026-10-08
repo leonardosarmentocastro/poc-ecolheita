@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createJevClassifier } from "@/modules/relevance";
 import { answering, startFakeJev } from "./fake-jev";
 
@@ -6,6 +6,7 @@ let close: (() => Promise<void>) | undefined;
 afterEach(async () => {
   await close?.();
   close = undefined;
+  vi.unstubAllGlobals();
 });
 
 const one = [{ id: 1, name: "Banana" }];
@@ -28,6 +29,20 @@ describe("createJevClassifier failures", () => {
       expect(fake.requests).toHaveLength(1);
     },
   );
+
+  it("releases the connection on a non-2xx answer by cancelling its body", async () => {
+    let cancelled = false;
+    const body = new ReadableStream({
+      cancel() {
+        cancelled = true;
+      },
+    });
+    vi.stubGlobal("fetch", async () => new Response(body, { status: 429 }));
+    await expect(
+      createJevClassifier({ apiKey: "k", url: "http://jev.test" }).classify("b", one),
+    ).rejects.toMatchObject({ kind: "status" });
+    expect(cancelled).toBe(true);
+  });
 
   it("rejects as invalid on a body that is not JSON", async () => {
     const fake = await serve(() => ({ raw: "<html>oops</html>" }));
