@@ -1,10 +1,10 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 import { expect, within } from "storybook/test";
 import { SearchResults } from "@/modules/products/components/SearchResults";
-import type { SearchResult } from "@/modules/products/types";
+import type { Product } from "@/modules/products/types";
 
 const at = "2026-09-22T12:00:00.000Z";
-const result = (id: number, shopName: string, name: string, finalPrice: number): SearchResult => ({
+const product = (id: number, shopName: string, name: string, finalPrice: number): Product => ({
   id,
   shopName,
   name,
@@ -12,20 +12,24 @@ const result = (id: number, shopName: string, name: string, finalPrice: number):
   quantity: 10,
   discountPercentage: 50,
   finalPrice,
-  similarity: 0.7,
   createdAt: at,
   updatedAt: at,
 });
 const bananas = [
-  result(4, "CEASA SJC", "Banana prata orgânica", 160),
-  result(1, "Mercadinho Candelária", "Banana", 300),
-  result(2, "VEC Hortifruti", "Banana prata", 350),
+  product(4, "CEASA SJC", "Banana prata orgânica", 160),
+  product(1, "Mercadinho Candelária", "Banana", 300),
+  product(2, "VEC Hortifruti", "Banana prata", 350),
 ];
 
 const meta = {
   component: SearchResults,
   tags: ["autodocs"],
-  args: { query: "banana", results: bananas, loading: false, error: null },
+  args: {
+    query: "banana",
+    response: { tiered: false, results: bananas },
+    loading: false,
+    error: null,
+  },
 } satisfies Meta<typeof SearchResults>;
 
 export default meta;
@@ -33,21 +37,23 @@ type Story = StoryObj<typeof meta>;
 
 /** Before the first search: a prompt, no cards, no empty state. */
 export const Idle: Story = {
-  args: { query: "", results: [] },
+  args: { query: "", response: undefined },
   play: async ({ canvasElement }) => {
     const c = within(canvasElement);
     await expect(c.getByText("Digite o nome de um produto")).toBeInTheDocument();
     await expect(c.queryAllByRole("article")).toHaveLength(0);
-    await expect(c.queryByText(/Nenhum produto parecido/)).toBeNull();
+    await expect(c.queryByRole("heading")).toBeNull();
   },
 };
 
-/** Cards in the order given, cheapest first. */
-export const CheapestFirst: Story = {
+/** Untiered: the notice, then the cards in the order the API gave. */
+export const Untiered: Story = {
   play: async ({ canvasElement }) => {
-    const names = within(canvasElement)
-      .getAllByRole("article")
-      .map((a) => a.getAttribute("aria-label"));
+    const c = within(canvasElement);
+    await expect(
+      c.getByText("Não conseguimos organizar os resultados por relevância"),
+    ).toBeInTheDocument();
+    const names = c.getAllByRole("article").map((a) => a.getAttribute("aria-label"));
     await expect(names).toEqual(["Banana prata orgânica", "Banana", "Banana prata"]);
   },
 };
@@ -74,12 +80,14 @@ export const FailedKeepsPreviousResults: Story = {
   },
 };
 
-/** Nothing matched: the empty state with the query. */
-export const NothingMatched: Story = {
-  args: { query: "detergente", results: [] },
+/** Untiered and empty: the "não encontramos" heading, no notice. */
+export const UntieredNothing: Story = {
+  args: { query: "detergente", response: { tiered: false, results: [] } },
   play: async ({ canvasElement }) => {
+    const c = within(canvasElement);
     await expect(
-      within(canvasElement).getByText("Nenhum produto parecido com “detergente”."),
+      c.getByRole("heading", { name: "Não encontramos “detergente”" }),
     ).toBeInTheDocument();
+    await expect(c.queryByText(/Não conseguimos organizar/)).toBeNull();
   },
 };

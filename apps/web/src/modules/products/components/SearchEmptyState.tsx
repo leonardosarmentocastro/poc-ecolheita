@@ -1,9 +1,14 @@
-import { Text } from "@mantine/core";
+import { Title } from "@mantine/core";
 
 export interface SearchEmptyStateProps {
   query: string;
 }
 
+/** The seller's plain "no" (spec § The page). A heading, so it is found by role. */
 export function SearchEmptyState({ query }: SearchEmptyStateProps) {
-  return <Text c="dimmed">Nenhum produto parecido com “{query}”.</Text>;
+  return (
+    <Title order={2} size="h4">
+      Não encontramos “{query}”
+    </Title>
+  );
 }

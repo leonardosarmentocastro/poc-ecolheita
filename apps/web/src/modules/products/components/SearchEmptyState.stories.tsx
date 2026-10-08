@@ -11,11 +11,11 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** The text names the query verbatim. */
-export const NothingSimilar: Story = {
+/** The heading names the query verbatim. */
+export const NothingFound: Story = {
   play: async ({ canvasElement }) => {
     await expect(
-      within(canvasElement).getByText("Nenhum produto parecido com “detergente”."),
+      within(canvasElement).getByRole("heading", { name: "Não encontramos “detergente”" }),
     ).toBeInTheDocument();
   },
 };

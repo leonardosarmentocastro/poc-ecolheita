@@ -12,10 +12,8 @@ export interface Product {
   updatedAt: string;
 }
 
-export interface SearchResult extends Product {
-  /** Cosine similarity to the query, 4 decimal places, from the API. */
-  similarity: number;
-}
+/** A search answer (API contract). Slice 2 adds the tiered branch. */
+export type SearchResponse = { tiered: false; results: Product[] };
 
 export interface CreateProductInput {
   shopName: string;
