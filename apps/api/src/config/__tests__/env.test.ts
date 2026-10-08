@@ -25,3 +25,11 @@ describe("SEARCH_CLASSIFIER", () => {
     expect(() => envSchema.parse({ ...base, SEARCH_CLASSIFIER: "jev" })).toThrow();
   });
 });
+
+describe("TYPESAFE_API_KEY", () => {
+  it("is optional, and empty means unset", () => {
+    expect(envSchema.parse(base).TYPESAFE_API_KEY).toBeUndefined();
+    expect(envSchema.parse({ ...base, TYPESAFE_API_KEY: "" }).TYPESAFE_API_KEY).toBeUndefined();
+    expect(envSchema.parse({ ...base, TYPESAFE_API_KEY: "k" }).TYPESAFE_API_KEY).toBe("k");
+  });
+});

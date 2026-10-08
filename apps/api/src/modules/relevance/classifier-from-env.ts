@@ -1,8 +1,13 @@
 import type { Env } from "@/config/env";
 import { scenarioClassifier } from "@/modules/products/fixtures/scenario-classifier";
+import { createJevClassifier } from "@/modules/relevance/jev-classifier";
 import type { Classifier } from "@/modules/relevance/types";
 
-/** The classifier the env selects, or none (spec § The classifier seam). */
+/** Scenario wins (e2e must never reach a dev key), then Jev, then none. */
 export const classifierFromEnv = (
-  env: Partial<Pick<Env, "SEARCH_CLASSIFIER">>,
-): Classifier | null => (env.SEARCH_CLASSIFIER === "scenario" ? scenarioClassifier : null);
+  env: Partial<Pick<Env, "SEARCH_CLASSIFIER" | "TYPESAFE_API_KEY">>,
+): Classifier | null => {
+  if (env.SEARCH_CLASSIFIER === "scenario") return scenarioClassifier;
+  if (env.TYPESAFE_API_KEY) return createJevClassifier({ apiKey: env.TYPESAFE_API_KEY });
+  return null;
+};
