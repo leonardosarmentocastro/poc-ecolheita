@@ -1,10 +1,10 @@
 import type { APIRequestContext } from "@playwright/test";
 import { test, expect } from "../../fixtures/test";
 import { seedProduct } from "../../fixtures/seed";
-import { BANANA_SCENARIO } from "../../../apps/api/src/modules/products/fixtures/banana-scenario";
+import { SEARCH_SCENARIO } from "../../../apps/api/src/modules/products/fixtures/search-scenario";
 
 async function seedScenario(request: APIRequestContext) {
-  for (const row of BANANA_SCENARIO) {
+  for (const row of SEARCH_SCENARIO) {
     const { key: _key, ...input } = row;
     await seedProduct(request, input);
   }
@@ -32,17 +32,12 @@ test("renaming Banana to Maçã takes it out of the banana results", async ({ pa
   await page.goto("/buscar");
   await page.getByRole("searchbox", { name: "Nome do produto" }).fill("banana");
   await page.getByRole("button", { name: "Buscar" }).click();
-  await expect(page.getByRole("article").first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^Encontramos/ })).toBeVisible();
   const names = await page
     .getByRole("article")
     .evaluateAll((els) => els.map((el) => el.getAttribute("aria-label")));
   expect(names).not.toContain("Maçã");
-  expect(names.slice(0, 4)).toEqual([
-    "Banana prata orgânica",
-    "Bananada",
-    "Banana prata",
-    "Banana nanica",
-  ]);
+  expect(names).toContain("Banana prata");
 });
 
 test("deleting a product removes its row", async ({ page, request }) => {

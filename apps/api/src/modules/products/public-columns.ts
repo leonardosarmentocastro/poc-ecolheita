@@ -1,6 +1,6 @@
 import { products } from "@/modules/products/model";
 
-/** Every column the API may return. `embedding` is never serialised. */
+/** Every column the API may return. `embedding` and `searchName` are never serialised. */
 export const PRODUCT_PUBLIC_COLUMNS = {
   id: products.id,
   shopName: products.shopName,

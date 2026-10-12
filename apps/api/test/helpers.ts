@@ -1,9 +1,12 @@
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { createApp } from "@/server/server";
+import type { Classifier } from "@/modules/relevance";
 
-export const startServer = async (): Promise<{ server: Server; base: string }> => {
-  const server = createApp().listen(0);
+export const startServer = async (
+  deps: { classifier?: Classifier | null } = {},
+): Promise<{ server: Server; base: string }> => {
+  const server = createApp(deps).listen(0);
   await new Promise((resolve) => server.once("listening", resolve));
   const { port } = server.address() as AddressInfo;
   return { server, base: `http://localhost:${port}` };

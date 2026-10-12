@@ -12,10 +12,9 @@ export interface Product {
   updatedAt: string;
 }
 
-export interface SearchResult extends Product {
-  /** Cosine similarity to the query, 4 decimal places, from the API. */
-  similarity: number;
-}
+/** A search answer (API contract). */
+export type SearchResponse =
+  { tiered: true; matches: Product[]; related: Product[] } | { tiered: false; results: Product[] };
 
 export interface CreateProductInput {
   shopName: string;

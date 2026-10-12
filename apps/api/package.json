@@ -12,7 +12,7 @@
     "db:migrate": "drizzle-kit migrate",
     "test": "vitest run",
     "seed": "tsx src/db/seed-cli.ts",
-    "similarity": "tsx src/db/similarity-table-cli.ts"
+    "tiers:eval": "tsx src/db/tiers-eval-cli.ts"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.3.0",

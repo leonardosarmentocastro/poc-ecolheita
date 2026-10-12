@@ -55,16 +55,17 @@ describe("PATCH /products/:id", () => {
   });
 
   it("re-embeds when the normalised name changes", async () => {
-    // "Maçã", not "Maçã argentina": the same rename the e2e proves, so the HTTP tier
-    // catches a threshold that lets a bare fruit noun through before the browser does.
+    // "Maçã": the same rename the e2e proves. With no cutoff the renamed offer is still
+    // served, under its new name; slice 2 restores "absent from the banana results".
     const created = await create(base);
     const before = await productsRepository.findEmbedding(created.id);
     const res = await patch(base, created.id, { name: "Maçã" });
     expect(res.status).toBe(200);
     const after = await productsRepository.findEmbedding(created.id);
     expect(after).not.toEqual(before);
-    const hits = await (await fetch(`${base}/products/search?q=banana`)).json();
-    expect(hits.map((h: { id: number }) => h.id)).not.toContain(created.id);
+    const { results } = await (await fetch(`${base}/products/search?q=banana`)).json();
+    const hit = results.find((h: { id: number }) => h.id === created.id);
+    expect(hit?.name).toBe("Maçã");
   });
 
   it("keeps the vector when only case or spacing of the name changes", async () => {
