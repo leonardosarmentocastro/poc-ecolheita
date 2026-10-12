@@ -11,7 +11,7 @@ and fixed by subagents, with a human deciding at every gate. The doctrine is `HI
   removed from `main` after the feature merges. The PR description is the durable record.
 - `.claude/` (agents, commands, hook) and `HITL.md` are reviewed like code: change them by
   pull request.
-- Installed by hitl 0.1.0. `/hitl:diff` shows what changed upstream since;
+- Installed by hitl 0.2.0. `/hitl:diff` shows what changed upstream since;
   `/hitl:help` explains the state of this install.
 - Prerequisites: Claude Code with the superpowers plugin, `git`, `gh`; `/grill-me` from
   Matt Pocock's skills is the recommended start for a feature whose shape is unclear.
