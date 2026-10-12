@@ -1,8 +1,9 @@
 <!-- hitl:start -->
-# hitl: review output and dry-run scratch space are never committed.
+# hitl: review output, dry-run scratch space and design-session worktrees are never committed.
 .claude/reviews/
 .claude/fixtures/scratch/
 .claude/settings.local.json
+.claude/worktrees/
 <!-- hitl:end -->
 
 # Original Ecolheita app, kept locally as reference material only.
