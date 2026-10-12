@@ -15,11 +15,12 @@ that contradicts them is a bug. Workflow conventions live in the `AGENTS.md` fil
 - **Duplicates are two offers.** Two rows with the same shop and name are two offers and
   both are listed; there is no uniqueness rule. A shop may sell the same item in several
   lots (issue #3), and this matches it.
-- **Same product across shops** — "banana", "banana prata" and "banana nanica" count as the
-  same product for a shopper; cultivars are included (recall over precision, for the
-  food-waste use case). A product made of banana, such as "Bananada", also counts as a
-  match for "banana"; "bolo de banana" is the known hard case, a different product the
-  search may still return.
+- **Relevance tier** — for one search, every product is a **match** (it *is* the thing
+  searched for, or a kind, variety or form of it you would accept as a yes: "Banana prata"
+  for banana), **related** (made from it, used with it, or plausibly wanted by someone looking
+  for it: "Bananada" and "Bolo de banana" for banana; "Mistura para bolo" and "Forma de bolo"
+  for bolo) or **unrelated** (everything else, never shown in a tiered answer). Bananada is
+  related to banana, not a match: it is made from banana.
 
 ## Search
 
@@ -28,16 +29,30 @@ that contradicts them is a bug. Workflow conventions live in the `AGENTS.md` fil
 - **Similarity** — `1 - cosine_distance` between the query's vector and the product's,
   in `[-1, 1]`, higher is closer. Model: `Xenova/paraphrase-multilingual-MiniLM-L12-v2`,
   384 dimensions, run in-process.
-- **Threshold** — `SEARCH_SIMILARITY_THRESHOLD`: a row matches when its similarity is
-  greater than or equal to it. The default was chosen from the banana scenario's
-  similarity table and is a regression guard on that fixture, not evidence the model
-  generalises.
-- **Ranking** — matches are ordered by final price ascending, then similarity descending,
-  then id ascending. Cap 20.
+- **Search name** — the normalised name with accents stripped (`maçã` → `maca`), stored as
+  `search_name`. It feeds the fuzzy list only. **Normalisation decides who is considered,
+  never what something is:** "maca" (a stretcher) and "maçã" (an apple) both reach the
+  shortlist for either search; whatever judges relevance sees the real, accented names.
+- **No cutoff** — no similarity or trigram threshold hides a product from the shortlist.
+- **Shortlist** — the fuzzy list (trigram word distance between the search text and
+  `search_name`) and the meaning list (cosine distance between the vectors), each the 50
+  closest in-stock rows ordered by distance then id, interleaved — fuzzy 1, meaning 1,
+  fuzzy 2, … — skipping duplicates, up to 50.
+- **Tiered answer** — matches, then related; inside each, final price ascending, then id.
+  Distance is reserved as the third key (issue #3). Products with the same name (after
+  trimming, lowercasing and collapsing spaces, accents kept) are one question to the
+  classifier and always share a tier.
+- **Untiered answer** — when no classifier is configured or it fails, the first 20 of the
+  shortlist, under a notice that they are not organised by relevance. It may include
+  unrelated products.
+- **Classifier** — TypeSafe Jev, model pinned to `jev-1.13.0`, decides each product's tier
+  when `TYPESAFE_API_KEY` is set: one request per search, one question per distinct name,
+  2-second budget, no retries. Without a key, or when Jev fails, search answers untiered.
+  Changing the model or the criteria wording means re-running `pnpm --filter api tiers:eval`.
 - **Zero stock** — a product with `quantity = 0` is never a search result; it is still listed
   on the products page.
-- **A product without a vector never exists** — the repository embeds on every create and on
-  every rename; it is the only write path.
+- **A product without a vector never exists** — the repository embeds and writes
+  `search_name` on every create and every rename; it is the only write path.
 
 ## Not in the model yet
 

@@ -3,13 +3,14 @@ import { z } from "zod";
 export const envSchema = z.object({
   DATABASE_URL: z.url(),
   PORT: z.coerce.number().default(3333),
-  // Cosine similarity floor for a search match (CONTEXT.md). Default chosen from the
-  // banana scenario's similarity table — see the slice 2 pull request. An empty value
-  // (`SEARCH_SIMILARITY_THRESHOLD=` in a .env) is unset, never 0.
-  SEARCH_SIMILARITY_THRESHOLD: z.preprocess(
+  // Which classifier tiers search results (spec § The classifier seam). `scenario` answers
+  // from the test fixture and is for e2e only; unset means none.
+  SEARCH_CLASSIFIER: z.preprocess(
     (v) => (v === "" ? undefined : v),
-    z.coerce.number().min(-1).max(1).default(0.57),
+    z.enum(["scenario"]).optional(),
   ),
+  // TypeSafe Jev's key (spec § The classifier seam). Lives only in apps/api/.env; never logged.
+  TYPESAFE_API_KEY: z.preprocess((v) => (v === "" ? undefined : v), z.string().min(1).optional()),
 });
 
 export const env = envSchema.parse(process.env);

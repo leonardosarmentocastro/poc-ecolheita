@@ -19,6 +19,7 @@ export const createProductSchema = insertSchema.omit({
   updatedAt: true,
   // Computed by the repository from the name, never accepted from a client.
   embedding: true,
+  searchName: true,
 });
 
 export type CreateProductInput = z.infer<typeof createProductSchema>;
