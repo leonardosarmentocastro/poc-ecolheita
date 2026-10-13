@@ -1,32 +1,70 @@
 import "dotenv/config";
 import { pool } from "@/db/client";
-import { seedSearchScenario } from "@/db/seed";
+import { seedMarketplaceCorpus } from "@/db/seed";
 import { env } from "@/config/env";
-import { loadEmbeddingModel } from "@/modules/embeddings";
-import { createJevClassifier, ClassifierError, type Tier } from "@/modules/relevance";
-import { gradeTiers, type EvalRow } from "@/modules/relevance/evaluate-tiers";
-import { FILLER_NAMES } from "@/modules/products/fixtures/filler-names";
+import { loadEmbeddingModel, normalizeForEmbedding } from "@/modules/embeddings";
 import {
-  EXPECTED_TIERS,
-  SEARCH_SCENARIO,
-  type ScenarioQuery,
-} from "@/modules/products/fixtures/search-scenario";
+  ClassifierError,
+  createJevClassifier,
+  distinctCandidates,
+  findExampleCollisions,
+  findUnlabelled,
+  PROTECTED_NAMES,
+  TIER_CRITERIA,
+  type Candidate,
+  type Tier,
+} from "@/modules/relevance";
+import {
+  gradeCorpus,
+  RUNS,
+  type Answers,
+  type CorpusEvalRow,
+} from "@/modules/relevance/grade-corpus";
+import { renderCorpusReport } from "@/modules/relevance/print-corpus-grade";
+import {
+  CORPUS_LABELS,
+  CORPUS_PAGES,
+  type CorpusTerm,
+} from "@/modules/products/fixtures/marketplace-corpus";
 import { productsRepository } from "@/modules/products/repository";
 
-// Grades real Jev on the search scenario (spec § Testing, tiers:eval). REPLACES the products
-// in DATABASE_URL with the scenario. Paste the printed table into the slice's PR body.
-if (!env.TYPESAFE_API_KEY) {
-  console.error("tiers:eval needs TYPESAFE_API_KEY in apps/api/.env");
-  process.exit(1);
-}
-const jev = createJevClassifier({ apiKey: env.TYPESAFE_API_KEY });
-
-const expectedTier = (q: ScenarioQuery, name: string): Tier => {
-  const key = SEARCH_SCENARIO.find((r) => r.name === name)?.key;
-  if (key && EXPECTED_TIERS[q].matches.includes(key)) return "match";
-  if (key && EXPECTED_TIERS[q].related.includes(key)) return "related";
-  return "unrelated";
+// Grades real Jev on the marketplace corpus (spec § The eval). REPLACES the products in
+// DATABASE_URL with the corpus. Exit: 0 PASS · 1 FAIL · 2 INVALID · 3 CHECK FAILED.
+// --show-holdout prints the hold-out row tables; the tuning loop never passes it.
+const showHoldout = process.argv.includes("--show-holdout");
+const checkFailed = (why: string): never => {
+  console.log(`CHECK FAILED — ${why}`);
+  process.exit(3);
 };
+
+if (!env.TYPESAFE_API_KEY) checkFailed("tiers:eval needs TYPESAFE_API_KEY in apps/api/.env");
+const jev = createJevClassifier({ apiKey: env.TYPESAFE_API_KEY! });
+
+const collisions = findExampleCollisions(TIER_CRITERIA, PROTECTED_NAMES);
+if (collisions.length)
+  checkFailed(
+    `criteria examples reuse protected names:\n${collisions.map((c) => `  ${c.example} ⊂ ${c.name}`).join("\n")}`,
+  );
+
+await loadEmbeddingModel();
+await seedMarketplaceCorpus();
+
+// One question per distinct name (CONTEXT.md § Tiered answer); distinctCandidates, not tierShortlist.
+const terms = [...new Set(CORPUS_PAGES.map((p) => p.term))] as CorpusTerm[];
+const perTerm = new Map<CorpusTerm, { candidates: Candidate[]; labels: Tier[] }>();
+const missing: string[] = [];
+for (const term of terms) {
+  const shortlist = await productsRepository.shortlist(term);
+  const names = shortlist.map((p) => p.name);
+  missing.push(...findUnlabelled(term, names, CORPUS_LABELS).map((n) => `  ${term} | ${n}`));
+  const candidates = distinctCandidates(shortlist);
+  perTerm.set(term, {
+    candidates,
+    labels: candidates.map((c) => CORPUS_LABELS[term][normalizeForEmbedding(c.name)]),
+  });
+}
+if (missing.length)
+  checkFailed(`unlabelled shortlist pairs (never defaulted):\n${missing.join("\n")}`);
 
 const timed = async <T>(fn: () => Promise<T>): Promise<[T, number]> => {
   const t = performance.now();
@@ -34,62 +72,47 @@ const timed = async <T>(fn: () => Promise<T>): Promise<[T, number]> => {
   return [out, Math.round(performance.now() - t)];
 };
 
-await loadEmbeddingModel();
-await seedSearchScenario();
-
-const rows: EvalRow[] = [];
-const latencies: number[] = [];
-let timedOut = false;
-console.log("| query | product | expected | Jev | ✓ |\n|---|---|---|---|---|"); // no confidence column: the adapter does not return it (spec § Jev implementation)
-for (const q of Object.keys(EXPECTED_TIERS) as ScenarioQuery[]) {
-  const shortlist = await productsRepository.shortlist(q);
-  try {
-    const [tiers, ms] = await timed(() =>
-      jev.classify(
-        q,
-        shortlist.map((p) => ({ id: p.id, name: p.name })),
-      ),
-    );
-    latencies.push(ms);
-    for (const p of shortlist) {
-      const row = { name: p.name, expected: expectedTier(q, p.name), got: tiers.get(p.id)! };
-      rows.push(row);
-      console.log(
-        `| ${q} | ${p.name} | ${row.expected} | ${row.got} | ${row.expected === row.got ? "✓" : "✗"} |`,
-      );
+const runEval = async () => {
+  const answers = new Map<CorpusTerm, Map<number, Tier | null>[]>();
+  const latencies: number[] = [];
+  for (let run = 0; run < RUNS; run++) {
+    for (const term of terms) {
+      const { candidates } = perTerm.get(term)!;
+      const runs = answers.get(term) ?? [];
+      try {
+        const [tiers, ms] = await timed(() => jev.classify(term, candidates));
+        latencies.push(ms);
+        runs.push(tiers);
+        console.error(`run ${run + 1} · ${term}: ${candidates.length} questions in ${ms} ms`);
+      } catch (err) {
+        const kind = err instanceof ClassifierError ? err.kind : "unexpected";
+        console.error(`run ${run + 1} · ${term}: FAILED (${kind})`);
+        runs.push(new Map(candidates.map((c) => [c.id, null])));
+      }
+      answers.set(term, runs);
     }
-    console.log(`\n${q}: ${shortlist.length} candidates in ${ms} ms\n`);
-  } catch (err) {
-    timedOut ||= err instanceof ClassifierError && err.kind === "timeout";
-    console.log(`\n${q}: FAILED (${err instanceof ClassifierError ? err.kind : "unexpected"})\n`);
-    rows.push({ name: `(${q} call)`, expected: "match", got: "unrelated" });
   }
-}
-
-const fifty = [
-  ...SEARCH_SCENARIO.map((r, i) => ({ id: i + 1, name: r.name })),
-  ...FILLER_NAMES.slice(0, 36).map((name, i) => ({ id: 100 + i, name })),
-];
-for (let run = 1; run <= 5; run++) {
-  try {
-    const [, ms] = await timed(() => jev.classify("bolo", fifty));
-    latencies.push(ms);
-    console.log(`50 candidates, run ${run}: ${ms} ms`);
-  } catch (err) {
-    timedOut ||= err instanceof ClassifierError && err.kind === "timeout";
-    console.log(
-      `50 candidates, run ${run}: FAILED (${err instanceof ClassifierError ? err.kind : "unexpected"})`,
-    );
-    latencies.push(Number.POSITIVE_INFINITY);
+  const rows: CorpusEvalRow[] = [];
+  for (const term of terms) {
+    const { candidates, labels } = perTerm.get(term)!;
+    const runs = answers.get(term)!;
+    candidates.forEach((c, i) => {
+      rows.push({
+        term,
+        name: c.name,
+        label: labels[i],
+        got: runs.map((r) => r.get(c.id) ?? null) as Answers,
+      });
+    });
   }
-}
+  return { rows, grade: gradeCorpus(rows, latencies) };
+};
 
-const grade = gradeTiers(rows, latencies);
-console.log(
-  `\nagreement ${grade.agree}/${grade.total} · worst latency ${grade.worstMs} ms (budget 1500) · model jev-1.13.0`,
-);
-console.log(
-  grade.pass && !timedOut ? "PASS" : "FAIL — report to the human; never bend the fixture",
-);
+let result = await runEval();
+if (result.grade.latencyOnly) {
+  console.error("slow call only (both floors met) — re-running once, per spec § A slow call");
+  result = await runEval();
+}
+console.log(renderCorpusReport(result.rows, result.grade, { showHoldout }));
 await pool.end();
-process.exit(grade.pass && !timedOut ? 0 : 1);
+process.exit({ PASS: 0, FAIL: 1, INVALID: 2 }[result.grade.verdict]);
