@@ -12,7 +12,7 @@ export const TIER_CRITERIA: Record<Tier, { what: string; not_for?: string; examp
       "Products made from it, used with it, or merely associated with it, and a mix, kit or semi-finished product for making it (related).",
     examples: [
       '"Laranja pera" for "laranja"',
-      '"Pão francês" for "pão"',
+      '"Pão sírio" for "pão"',
       '"Leite integral" for "leite"',
     ],
   },

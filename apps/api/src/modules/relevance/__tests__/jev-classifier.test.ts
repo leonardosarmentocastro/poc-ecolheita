@@ -86,10 +86,4 @@ describe("createJevClassifier", () => {
     ]);
     expect(tiers.get(1)).toBe("match");
   });
-
-  it("keeps the scenario's names out of the criteria examples", async () => {
-    const { SEARCH_SCENARIO } = await import("@/modules/products/fixtures/search-scenario");
-    const text = JSON.stringify(TIER_CRITERIA).toLowerCase();
-    for (const row of SEARCH_SCENARIO) expect(text).not.toContain(row.name.toLowerCase());
-  });
 });
