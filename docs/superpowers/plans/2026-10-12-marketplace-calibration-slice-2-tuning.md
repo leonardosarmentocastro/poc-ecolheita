@@ -2,6 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Reviewed:** round 1 (2026-10-12).
 **Owns:** the tuning and the outcome — the bounded loop (rounds 1 to at most 5, slice 1's round 0 as the baseline), one commit per round with its report, the round table, the prompt that ships (the passing round's, or round 0's), and the `CONTEXT.md` sentence.
 
 **Goal:** Jev's prompt is reworded, round by round, on the four tuning searches until the two hold-out searches pass the 80% gate, or the loop stops; whichever happens, the PR shows every round's numbers and ships either the passing wording or round 0's.
@@ -30,8 +31,8 @@
 
 ## Review Focus
 
-- A committed round file must contain no hold-out product name. A reviewer checks `grep -l "Uva Crimson\|Neve Supreme" apps/api/test/marketplace/rounds/` is empty. → Task 2 Step 5 (the loop greps before committing).
-- A rewording that mentions a corpus product in prose (not as an example) is not caught by the example check, yet leaks the answer. The prose (`what`, `not_for`, `state`, `instructions`) must not name any protected product either. → Task 2 Step 2 rule and Step 5 grep.
+- A committed round file must contain no hold-out **row table**. A reviewer checks `grep -lE "^### (uva|papel higiênico) \(" apps/api/test/marketplace/rounds/` is empty. Hold-out product *names* do appear inside the tuning tables as cross-page rows ("Uva Crimson" is in the banana and frango shortlists, labelled for those terms); that is not a leak. → Task 2 Step 5 (the loop greps before committing).
+- A rewording that mentions a corpus product in prose (not as an example) is not caught by the example check, yet leaks the answer. The prose (`what`, `not_for`, `state`, `instructions`) must not name any protected product either. → Task 2 Step 2 rule and Step 3 grep.
 - A round that changes `state` without updating the adapter test's exact-string assertion leaves `pnpm test` red; the gate must be green at every commit. → Task 2 Step 3.
 - After a never-PASS outcome, the prompt must equal round 0's exactly; a stray improved example left behind would ship untested wording. → Task 3 Step 2 (`git diff <parent> --stat` on the three prompt files is empty).
 - A noisy gain (one row's worth) must not be read as an improvement, and a noisy loss must not be read as a regression that stops the loop early. → the margin rule in Task 2 Step 6; Task 1 computes the margin from round 0's row count before round 1 starts.
@@ -93,7 +94,7 @@ If round 0's verdict is already PASS, skip Task 2: go to Task 3 with "passing ro
 
 - [ ] **Step 1: Decide what to reword, from the tuning rows only**
 
-Open the previous round's report (`round-<N-1>.md`). Read the four tuning row tables and the tuning per-class summary. Find the pattern behind the wrong rows: for example, processed forms labelled match that Jev calls related (shredded chicken, charque), or chicken on the carne page labelled related that Jev calls match, or candy flavoured with the fruit that Jev calls unrelated. Choose **one** idea per round, in plain words, and write it down before editing: "round N: tell Jev that a cooked or shredded form of the thing is still the thing". Do not read the hold-out sections for this decision; they are not in the file.
+Open the previous round's report (`round-<N-1>.md`). Read the four tuning row tables and the tuning per-class summary. Find the pattern behind the wrong rows: for example, processed forms labelled match that Jev calls related (shredded chicken, charque), or chicken on the carne page labelled related that Jev calls match, or candy flavoured with the fruit that Jev calls unrelated. Choose **one** idea per round, in plain words, and write it down before editing: "round N: tell Jev that a cooked or shredded form of the thing is still the thing". The hold-out **row tables** are not in the file by design; the `## hold-out` summary is, and it is read only to fill the round table, never to decide what to reword. Use only the four tuning row tables and the tuning summary for this decision.
 
 - [ ] **Step 2: Edit the prompt**
 
@@ -110,6 +111,11 @@ If the `state` or `instructions` template changed, update the matching exact-str
 Run: `cd apps/api && pnpm exec vitest run src/modules/relevance && pnpm typecheck && pnpm lint`
 Expected: PASS and clean. The example-collision test in `corpus-check.test.ts` runs here; a collision fails now, before any Jev call.
 
+Then check the prose for protected names by hand, since the check covers examples only:
+
+Run: `cd apps/api && pnpm exec tsx -e 'import { PROTECTED_NAMES } from "./src/modules/relevance/corpus-check.ts"; import { TIER_CRITERIA } from "./src/modules/relevance/criteria.ts"; const prose = Object.values(TIER_CRITERIA).flatMap(c => [c.what, c.not_for ?? ""]).join(" ").toLowerCase(); console.log(PROTECTED_NAMES.filter(n => prose.includes(n.toLowerCase())))'`
+Expected: `[]`. (If the `@/` alias is needed, run it as a one-off file under `src/db/` and delete it before committing.)
+
 - [ ] **Step 4: Run the round**
 
 Run: `pnpm --filter api tiers:eval > apps/api/test/marketplace/rounds/round-<N>.md; echo "exit $?"`
@@ -118,8 +124,8 @@ Expected: exit 0 (PASS) or 1 (FAIL). On exit 2 (INVALID): run the same command a
 
 - [ ] **Step 5: Confirm nothing hold-out leaked, then record the round**
 
-Run: `grep -c "hold-out rows hidden" apps/api/test/marketplace/rounds/round-<N>.md; grep -l "Uva \|uva \|Papel Higi\|papel higi\|Neve \|Personal VIP" apps/api/test/marketplace/rounds/round-<N>.md || echo "clean"`
-Expected: `1`, then `clean`. (The `## hold-out` summary heading is allowed; product names are not. If a tuning product's title contains one of those words, inspect the hit by hand before concluding.)
+Run: `grep -c "hold-out rows hidden" apps/api/test/marketplace/rounds/round-<N>.md; grep -cE "^### (uva|papel higiênico) \(" apps/api/test/marketplace/rounds/round-<N>.md`
+Expected: `1`, then `0`. (The `## hold-out` summary is allowed and expected; a `### uva (` or `### papel higiênico (` row-table heading is the leak. Hold-out product names inside the tuning tables are cross-page rows, not a leak.)
 
 Append a row to `rounds.md`:
 

@@ -225,7 +225,8 @@ test for what HTTP cannot see), so a drift is caught without a key.
 
 ```
 1. seed       wipe products, insert the corpus through the repository
-2. check      for each term: shortlist(term); every (term, name) has a label, else FAIL and list them
+2. check      no criteria example collides with a protected name; for each term: shortlist(term),
+              every (term, name) has a label — else print CHECK FAILED, list the offenders, exit 3
 3. run ×3     for each term: shortlist(term) → one Jev call (one question per distinct name) → tiers
               a failed call (timeout, status, invalid) makes the whole eval INVALID; no retries
 4. grade      per term group (tuning / hold-out):
@@ -418,6 +419,10 @@ A one-slice design was considered and declined: the measurement is worth merging
 the tuning stalls, and a reviewer should see round 0 before any rewording.
 
 ## Decisions and declined alternatives
+
+- **Bubbled up from plan review (round 1)** — a failed pre-flight check (example collision,
+  unlabelled pair, missing key) is a fourth outcome, `CHECK FAILED`, exit 3: neither a verdict
+  nor a round. The gate's 0 / 1 / 2 stay as they were.
 
 - Both problems, accuracy and stability, at 80% (human, grill): Mercado Livre itself shows
   7 of 8 identical results on two runs of the same search, which set the number.

@@ -2,6 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Reviewed:** round 1 (2026-10-12).
 **Owns:** the measurement — the corpus seed path, the labels and example-collision checks, the `gradeCorpus` grader with its three-run / two-number / per-class / group-split gate, the rewritten `tiers:eval` (with `--show-holdout`, the slow-call re-run and the exit codes), the replacement of the one corpus-colliding example (round 0's wording), and round 0's tables in the PR body.
 
 **Goal:** `pnpm --filter api tiers:eval` seeds the marketplace corpus, runs the whole search three times, and prints agreement, stability, per-class numbers and a PASS / FAIL / INVALID verdict measured on the hold-out terms.
@@ -32,10 +33,10 @@
 
 ## Review Focus
 
-- A corpus name that appears on two pages (one listing on the Mercado Livre carne page is there twice under slightly different titles, and some chicken titles sit on both the frango and the carne Amazon pages) must produce one row per distinct normalised name per term, never two rows with the same name. → Task 4 test (duplicate offers collapse to one row).
+- A corpus name that appears on two pages (one listing on the Mercado Livre carne page is there twice under slightly different titles, and some chicken titles sit on both the frango and the carne Amazon pages) must produce one row per distinct normalised name per term, never two rows with the same name. → Task 2 test of `distinctCandidates` (two spellings of one name collapse to the first id and spelling, order kept); Task 4 pins that the duplicates really reach the shortlist.
 - A Jev call that fails on the third run of the last term must still print the first two runs' answers for every term and the `—` column, and exit 2, not crash mid-table. → Task 3 test (a `null` answer grades INVALID, agreement computed over the runs that answered) and Task 5 manual check.
-- A hold-out run at exactly 80.0% (for example 40 of 50 rows) passes; 79.9% fails. Rounding must not turn 39.9/50 into a pass. → Task 3 test.
-- `--show-holdout` passed in the loop would leak the hold-out rows into a committed output. The flag must be the only way to print them, and the default output must contain no hold-out product name. → Task 5 test on the printer (pure) and manual check.
+- A hold-out run at exactly 80.0% (for example 40 of 50 rows) passes; 79.9% fails, on agreement and on stability alike. Rounding must not turn 39.9/50 into a pass. → Task 3 tests.
+- `--show-holdout` passed in the loop would leak the hold-out rows into a committed output. The flag must be the only way to print them, and the default output must contain no hold-out **row table** (no `### uva (` or `### papel higiênico (` heading). Hold-out *names* do appear in the tuning tables as cross-page rows ("Uva Crimson" sits in the banana and frango shortlists) and that is not a leak: their banana label says nothing about their uva label. → Task 5 test on the printer (pure) and manual check.
 - The example check must catch containment, not only equality: `"Pão francês"` is inside `"Pão Francês Modelado Congelado - 260 g"`. A check that compares whole strings passes while proving nothing. → Task 2 test.
 
 ---
@@ -160,6 +161,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
   - `exampleProduct(example: string): string` — the quoted product of `"X" for "y"`; throws on any other shape.
   - `findExampleCollisions(criteria: typeof TIER_CRITERIA, names: readonly string[]): { example: string; name: string }[]` — every (example, name) where the normalised product equals or is contained in the normalised name.
   - `findUnlabelled(term: CorpusTerm, names: readonly string[], labels: typeof CORPUS_LABELS): string[]` — the names (original spelling, one per normalised key) with no label for that term.
+  - `distinctCandidates(products: readonly { id: number; name: string }[]): Candidate[]` — one candidate per normalised name, the first id and spelling kept, shortlist order preserved (the forwarded item: one question per distinct name, grouped by the eval itself, never by `tierShortlist`).
   - `PROTECTED_NAMES: readonly string[]` — every corpus name plus every scenario name.
 
 - [ ] **Step 1: Write the failing unit tests**
@@ -210,6 +212,8 @@ describe("findExampleCollisions", () => {
   });
   it("PROTECTED_NAMES holds every corpus and scenario name", () => {
     expect(PROTECTED_NAMES).toHaveLength(CORPUS.length + SEARCH_SCENARIO.length);
+    expect(PROTECTED_NAMES).toContain(CORPUS[0].name);
+    expect(PROTECTED_NAMES).toContain("Bananada"); // a scenario name
   });
 });
 
@@ -221,7 +225,28 @@ describe("findUnlabelled", () => {
     ]);
   });
 });
+
+describe("distinctCandidates", () => {
+  it("asks once per normalised name, keeping the first id and spelling, in order", () => {
+    expect(
+      distinctCandidates([
+        { id: 7, name: "Uva Crimson" },
+        { id: 9, name: "UVA  crimson" },
+        { id: 3, name: "Kapo Uva 200ml" },
+        { id: 11, name: "uva crimson " },
+      ]),
+    ).toEqual([
+      { id: 7, name: "Uva Crimson" },
+      { id: 3, name: "Kapo Uva 200ml" },
+    ]);
+  });
+  it("keeps accents apart: Maca and Maçã are two questions", () => {
+    expect(distinctCandidates([{ id: 1, name: "Maca" }, { id: 2, name: "Maçã" }])).toHaveLength(2);
+  });
+});
 ```
+
+Add `distinctCandidates` to the import line at the top of the test file.
 
 - [ ] **Step 2: Run them to verify they fail**
 
@@ -234,7 +259,7 @@ Expected: FAIL — module not found.
 // apps/api/src/modules/relevance/corpus-check.ts
 import { normalizeForEmbedding } from "@/modules/embeddings";
 import type { TIER_CRITERIA } from "@/modules/relevance/criteria";
-import type { Tier } from "@/modules/relevance/types";
+import type { Candidate, Tier } from "@/modules/relevance/types";
 import { CORPUS, type CorpusTerm } from "@/modules/products/fixtures/marketplace-corpus";
 import { SEARCH_SCENARIO } from "@/modules/products/fixtures/search-scenario";
 
@@ -272,6 +297,21 @@ export const findExampleCollisions = (
   return hits;
 };
 
+/**
+ * One question per distinct name (CONTEXT.md § Tiered answer), grouped by the eval itself:
+ * `tierShortlist` also groups, but drops unrelated, and the eval needs all three tiers.
+ */
+export const distinctCandidates = (
+  products: readonly { id: number; name: string }[],
+): Candidate[] => {
+  const seen = new Map<string, Candidate>();
+  for (const p of products) {
+    const key = normalizeForEmbedding(p.name);
+    if (!seen.has(key)) seen.set(key, { id: p.id, name: p.name });
+  }
+  return [...seen.values()];
+};
+
 /** Shortlist names with no label for the term; one per normalised name, original spelling. */
 export const findUnlabelled = (
   term: CorpusTerm,
@@ -299,7 +339,7 @@ export * from "@/modules/relevance/corpus-check";
 - [ ] **Step 4: Run the tests; expect one failure left**
 
 Run: `cd apps/api && pnpm exec vitest run src/modules/relevance/__tests__/corpus-check.test.ts`
-Expected: 5 pass, 1 FAIL — "the current criteria collide with nothing": `"Pão francês" for "pão"` hits two corpus names. This failure is the point: it is round 0's only edit.
+Expected: 7 pass, 1 FAIL — "the current criteria collide with nothing": `"Pão francês" for "pão"` hits two corpus names (verified 2026-10-12: it is the only collision among the 12 examples and 236 protected names; `"Manteiga com sal"` does not collide). This failure is the point: it is round 0's only edit.
 
 - [ ] **Step 5: Replace the colliding example**
 
@@ -320,7 +360,7 @@ Nothing else in the file changes.
 - [ ] **Step 6: Run the tests; all pass**
 
 Run: `cd apps/api && pnpm exec vitest run src/modules/relevance/__tests__/corpus-check.test.ts`
-Expected: PASS (6 tests).
+Expected: PASS (8 tests).
 
 - [ ] **Step 7: Retire the old scenario-only example test**
 
@@ -346,8 +386,8 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 **Files:**
 - Create: `apps/api/src/modules/relevance/grade-corpus.ts`
-- Delete: `apps/api/src/modules/relevance/evaluate-tiers.ts`, `apps/api/src/modules/relevance/__tests__/evaluate-tiers.test.ts`, `apps/api/src/modules/products/fixtures/filler-names.ts`
 - Test: `apps/api/src/modules/relevance/__tests__/grade-corpus.test.ts`
+- (The old `evaluate-tiers.ts`, its test and `filler-names.ts` are deleted in Task 5, together with the CLI rewrite that is their last user, so every commit stays green.)
 
 **Interfaces:**
 - Consumes: `Tier`, `CorpusTerm`, `TUNING_TERMS`, `HOLDOUT_TERMS`.
@@ -379,13 +419,9 @@ export interface CorpusGrade {
 export const gradeCorpus = (rows: CorpusEvalRow[], latenciesMs: number[]): CorpusGrade;
 ```
 
-- [ ] **Step 1: Delete the old grader, its test and the filler names**
+- [ ] **Step 1: Note what stays for now**
 
-```bash
-git rm apps/api/src/modules/relevance/evaluate-tiers.ts apps/api/src/modules/relevance/__tests__/evaluate-tiers.test.ts apps/api/src/modules/products/fixtures/filler-names.ts
-```
-
-`tiers-eval-cli.ts` still imports them; it is rewritten in Task 5. Until then `pnpm typecheck` fails on that one file; that is expected and the reason Tasks 3–5 are committed in sequence, not pushed separately.
+`gradeTiers` (`evaluate-tiers.ts`) and `FILLER_NAMES` keep existing until Task 5 rewrites the CLI that imports them. This task adds the new grader beside the old one.
 
 - [ ] **Step 2: Write the failing unit tests**
 
@@ -452,6 +488,29 @@ describe("gradeCorpus", () => {
     expect(g.verdict).toBe("FAIL");
   });
 
+  it("passes at exactly 80% stability (40 of 50 rows stable) and fails at 78% (39 of 50)", () => {
+    // Every run still agrees at ≥ 80%: the flips are spread across runs.
+    const build = (flips: number): CorpusEvalRow[] =>
+      Array.from({ length: 50 }, (_, i) => {
+        const got: Answers =
+          i < flips
+            ? i % 3 === 0
+              ? ["related", "match", "match"]
+              : i % 3 === 1
+                ? ["match", "related", "match"]
+                : ["match", "match", "related"]
+            : ["match", "match", "match"];
+        return row("uva", "match", got, i);
+      });
+    const ten = gradeCorpus(build(10), [400]);
+    expect(ten.holdout.stability).toBe(0.8);
+    expect(ten.holdout.agreement.every((a) => a >= 0.8)).toBe(true);
+    expect(ten.verdict).toBe("PASS");
+    const eleven = gradeCorpus(build(11), [400]);
+    expect(eleven.holdout.stability).toBeCloseTo(0.78, 5);
+    expect(eleven.verdict).toBe("FAIL");
+  });
+
   it("a tuning group below 80% does not fail the gate", () => {
     const rows = [
       ...Array.from({ length: 10 }, (_, i) => row("banana", "match", ["related", "related", "related"], i)),
@@ -468,6 +527,8 @@ describe("gradeCorpus", () => {
     const g = gradeCorpus(rows, [400]);
     expect(g.verdict).toBe("INVALID");
     expect(g.holdout.agreement[0]).toBe(1);
+    // A null answer counts as wrong in that run's pooled number; the row table shows "—".
+    // Under INVALID the numbers are informative only, never a verdict.
     expect(g.holdout.agreement[2]).toBeCloseTo(49 / 50, 5);
   });
 
@@ -605,15 +666,13 @@ export const gradeCorpus = (rows: CorpusEvalRow[], latenciesMs: number[]): Corpu
 - [ ] **Step 5: Run the tests to verify they pass**
 
 Run: `cd apps/api && pnpm exec vitest run src/modules/relevance/__tests__/grade-corpus.test.ts`
-Expected: PASS (9 tests). If the "exactly 80%" test fails on floating point, compare with `toBeCloseTo(0.8, 10)`; the gate itself compares fractions, and 40/50 is exactly 0.8 in binary.
+Expected: PASS (10 tests). If an "exactly 80%" test fails on floating point, compare with `toBeCloseTo(0.8, 10)`; the gate itself compares fractions, and 40/50 is exactly 0.8 in binary.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add -A apps/api/src/modules/relevance apps/api/src/modules/products/fixtures/filler-names.ts
+git add apps/api/src/modules/relevance/grade-corpus.ts apps/api/src/modules/relevance/__tests__/grade-corpus.test.ts
 git commit -m "feat(api): gradeCorpus — three runs, agreement and stability floors, per-class summary
-
-Replaces the all-or-nothing gradeTiers; the filler names lose their last user.
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
@@ -658,6 +717,8 @@ describe("the marketplace corpus labels cover every shortlist pair", () => {
     expect(findUnlabelled(term, shortlist.map((p) => p.name), CORPUS_LABELS)).toEqual([]);
   });
 
+  // Coupled to the fixture's ranking: the two "Cesta Básica … Carne E Linguiças" offers share a
+  // vector and a search_name, so they rank adjacently and both reach the 50-row shortlist.
   it("carne: two offers with the same title are one labelled row", async () => {
     const shortlist = await productsRepository.shortlist("carne");
     const keys = shortlist.map((p) => normalizeForEmbedding(p.name));
@@ -713,31 +774,37 @@ import { HOLDOUT_MARKER, renderCorpusReport } from "@/modules/relevance/print-co
 
 const rows: CorpusEvalRow[] = [
   { term: "banana", name: "Banana Prata - 1 Und", label: "match", got: ["match", "match", "match"] },
+  // A cross-page row: a hold-out product inside a TUNING term's shortlist. Printing it by
+  // default is correct; its banana label says nothing about its uva label.
+  { term: "banana", name: "Uva Crimson", label: "unrelated", got: ["unrelated", "unrelated", "unrelated"] },
   { term: "uva", name: "Uva Crimson", label: "match", got: ["match", "related", null] },
   { term: "papel higiênico", name: "Neve Supreme 16 rolos", label: "match", got: ["match", "match", "match"] },
 ];
 
 describe("renderCorpusReport", () => {
-  it("prints tuning rows and hides hold-out rows by default", () => {
+  it("prints tuning row tables (cross-page rows included) and no hold-out row table by default", () => {
     const out = renderCorpusReport(rows, gradeCorpus(rows, [300]), { showHoldout: false });
-    expect(out).toContain("Banana Prata - 1 Und");
-    expect(out).not.toContain("Uva Crimson");
+    expect(out).toContain("### banana (2 rows)");
+    expect(out).toContain("| Uva Crimson | unrelated | unrelated | unrelated | unrelated | yes |");
+    expect(out).not.toMatch(/^### uva \(/m);
+    expect(out).not.toMatch(/^### papel higiênico \(/m);
     expect(out).not.toContain("Neve Supreme");
     expect(out).toContain("hold-out rows hidden (--show-holdout)");
   });
 
-  it("prints hold-out rows with --show-holdout, after the marker, a failed run as —", () => {
+  it("prints hold-out row tables with --show-holdout, after the marker, a failed run as —", () => {
     const out = renderCorpusReport(rows, gradeCorpus(rows, [300]), { showHoldout: true });
     const [above, below] = out.split(HOLDOUT_MARKER);
-    expect(above).not.toContain("Uva Crimson");
+    expect(above).not.toMatch(/^### uva \(/m);
     expect(above).toContain("INVALID"); // the verdict is above the marker
+    expect(below).toContain("### uva (1 rows)");
     expect(below).toContain("| Uva Crimson | match | match | related | — | no |");
     expect(below).toContain("Neve Supreme 16 rolos");
   });
 
   it("prints both group summaries with per-class lines, the latency line and the verdict", () => {
     const out = renderCorpusReport(rows, gradeCorpus(rows, [300]), { showHoldout: false });
-    expect(out).toContain("## tuning (1 rows)");
+    expect(out).toContain("## tuning (2 rows)");
     expect(out).toContain("## hold-out (2 rows)");
     expect(out).toMatch(/\| match \| 2 \| 100% \| 50% \| 50% \|/); // hold-out, class match
     expect(out).toContain("worst latency 300 ms (budget 1500)");
@@ -843,6 +910,7 @@ import { loadEmbeddingModel, normalizeForEmbedding } from "@/modules/embeddings"
 import {
   ClassifierError,
   createJevClassifier,
+  distinctCandidates,
   findExampleCollisions,
   findUnlabelled,
   PROTECTED_NAMES,
@@ -880,7 +948,7 @@ if (collisions.length)
 await loadEmbeddingModel();
 await seedMarketplaceCorpus();
 
-// One question per distinct name (CONTEXT.md § Tiered answer); grouped here, not by tierShortlist.
+// One question per distinct name (CONTEXT.md § Tiered answer); distinctCandidates, not tierShortlist.
 const terms = [...new Set(CORPUS_PAGES.map((p) => p.term))] as CorpusTerm[];
 const perTerm = new Map<CorpusTerm, { candidates: Candidate[]; labels: Tier[] }>();
 const missing: string[] = [];
@@ -888,12 +956,7 @@ for (const term of terms) {
   const shortlist = await productsRepository.shortlist(term);
   const names = shortlist.map((p) => p.name);
   missing.push(...findUnlabelled(term, names, CORPUS_LABELS).map((n) => `  ${term} | ${n}`));
-  const seen = new Map<string, Candidate>();
-  for (const p of shortlist) {
-    const key = normalizeForEmbedding(p.name);
-    if (!seen.has(key)) seen.set(key, { id: p.id, name: p.name });
-  }
-  const candidates = [...seen.values()];
+  const candidates = distinctCandidates(shortlist);
   perTerm.set(term, {
     candidates,
     labels: candidates.map((c) => CORPUS_LABELS[term][normalizeForEmbedding(c.name)]),
@@ -955,10 +1018,16 @@ process.exit({ PASS: 0, FAIL: 1, INVALID: 2 }[result.grade.verdict]);
 
 Progress lines go to stderr so the stdout report can be pasted into a PR body on its own. `env.TYPESAFE_API_KEY!` is safe after the `checkFailed` call, which never returns; if the linter objects to the non-null assertion, bind `const apiKey = env.TYPESAFE_API_KEY; if (!apiKey) checkFailed(…)` and use `apiKey`.
 
-- [ ] **Step 6: Typecheck and lint the whole API**
+- [ ] **Step 6: Delete the old grader, its test and the filler names, then typecheck and lint**
+
+The CLI was their last user:
+
+```bash
+git rm apps/api/src/modules/relevance/evaluate-tiers.ts apps/api/src/modules/relevance/__tests__/evaluate-tiers.test.ts apps/api/src/modules/products/fixtures/filler-names.ts
+```
 
 Run: `cd apps/api && pnpm typecheck && pnpm lint`
-Expected: clean. The old imports (`gradeTiers`, `FILLER_NAMES`, `EXPECTED_TIERS`, `seedSearchScenario`) are gone from the CLI; `seedSearchScenario` is still used by `seed-cli.ts` and the tests.
+Expected: clean. `seedSearchScenario` is still used by `seed-cli.ts` and the tests; nothing else imported the deleted files (verified 2026-10-12).
 
 - [ ] **Step 7: Run the full API suite**
 
@@ -968,8 +1037,10 @@ Expected: PASS. The suite does not call Jev.
 - [ ] **Step 8: Commit the CLI**
 
 ```bash
-git add apps/api/src/db/tiers-eval-cli.ts apps/api/src/modules/relevance/print-corpus-grade.ts apps/api/src/modules/relevance/__tests__/print-corpus-grade.test.ts
+git add -A apps/api/src/db/tiers-eval-cli.ts apps/api/src/modules/relevance apps/api/src/modules/products/fixtures/filler-names.ts
 git commit -m "feat(api): tiers:eval grades Jev on the marketplace corpus, three runs, hold-out gate
+
+Replaces the all-or-nothing gradeTiers; the filler names lose their last user.
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
@@ -982,10 +1053,10 @@ Run:
 mkdir -p apps/api/test/marketplace/rounds
 pnpm --filter api tiers:eval --show-holdout > /tmp/round-0-full.md; echo "exit $?"
 sed '/<!-- hold-out rows -->/,$d' /tmp/round-0-full.md > apps/api/test/marketplace/rounds/round-0.md
-grep -c "Uva Crimson" apps/api/test/marketplace/rounds/round-0.md
+grep -cE "^### (uva|papel higiênico) \(" apps/api/test/marketplace/rounds/round-0.md
 ```
 
-Expected: the checks pass (no collisions, no unlabelled pairs), 18 progress lines on stderr, and `/tmp/round-0-full.md` holds four tuning row tables, two summaries, the latency line, the verdict, the marker, then the two hold-out row tables. The `grep -c` prints `0`: the committed copy stops above the marker. Any exit code 0, 1 or 2 is a valid round 0. Exit 3 means a check failed: report to the human, do not edit the fixture. INVALID (exit 2): re-run the whole command once; if INVALID again, report the failure kinds to the human.
+Expected: the checks pass (no collisions, no unlabelled pairs), 18 progress lines on stderr, and `/tmp/round-0-full.md` holds four tuning row tables, two summaries, the latency line, the verdict, the marker, then the two hold-out row tables. The `grep -c` prints `0`: the committed copy holds no hold-out row table. (It does contain "Uva Crimson" and two papel higiênico titles inside the banana and frango tables; those are cross-page rows, labelled for banana and frango, and are not a leak.) Any exit code 0, 1 or 2 is a valid round 0. Exit 3 means a check failed: report to the human, do not edit the fixture. INVALID (exit 2): re-run the whole command once; if INVALID again, report the failure kinds to the human.
 
 Run this once. Round 0 is one noisy sample by design (spec § The tuning loop); slice 2 reuses this file as its baseline and never re-runs round 0.
 
