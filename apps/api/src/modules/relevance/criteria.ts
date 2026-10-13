@@ -1,9 +1,10 @@
 import type { Tier } from "@/modules/relevance/types";
 
 /**
- * The tier rule (CONTEXT.md, Relevance tier) as Jev `choice` criteria. Examples never reuse
- * the search scenario's names, so tiers:eval does not grade Jev on its own prompt. Changing
- * this wording means re-running tiers:eval.
+ * The tier rule (CONTEXT.md, Relevance tier) as Jev `choice` criteria. No example's product
+ * equals or sits inside a search-scenario or marketplace-corpus name (normalised containment,
+ * enforced by findExampleCollisions), so tiers:eval does not grade Jev on its own prompt.
+ * Changing this wording means re-running tiers:eval.
  */
 export const TIER_CRITERIA: Record<Tier, { what: string; not_for?: string; examples: string[] }> = {
   match: {
@@ -12,7 +13,7 @@ export const TIER_CRITERIA: Record<Tier, { what: string; not_for?: string; examp
       "Products made from it, used with it, or merely associated with it, and a mix, kit or semi-finished product for making it (related).",
     examples: [
       '"Laranja pera" for "laranja"',
-      '"Pão francês" for "pão"',
+      '"Pão sírio" for "pão"',
       '"Leite integral" for "leite"',
     ],
   },
