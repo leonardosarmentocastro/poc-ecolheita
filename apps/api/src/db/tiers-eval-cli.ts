@@ -6,14 +6,16 @@ import { loadEmbeddingModel, normalizeForEmbedding } from "@/modules/embeddings"
 import {
   ClassifierError,
   createJevClassifier,
-  distinctCandidates,
-  findExampleCollisions,
-  findUnlabelled,
-  PROTECTED_NAMES,
   TIER_CRITERIA,
   type Candidate,
   type Tier,
 } from "@/modules/relevance";
+import {
+  distinctCandidates,
+  findExampleCollisions,
+  findUnlabelled,
+  PROTECTED_NAMES,
+} from "@/modules/relevance/corpus-check";
 import {
   gradeCorpus,
   RUNS,
