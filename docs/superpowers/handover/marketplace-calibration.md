@@ -10,7 +10,7 @@ Spec(s): docs/superpowers/specs/2026-10-12-marketplace-calibration-design.md
 | slice | plan | branch | parent | status | owns |
 |---|---|---|---|---|---|
 | 1 | docs/superpowers/plans/2026-10-12-marketplace-calibration-slice-1-measurement.md | feat/marketplace-calibration-slice-1-measurement | feat/marketplace-calibration | open #18 | the measurement — the corpus seed path, the labels and example-collision checks, the `gradeCorpus` grader with its three-run / two-number / per-class / group-split gate, the rewritten `tiers:eval` (with `--show-holdout`, the slow-call re-run and the exit codes), the replacement of the one corpus-colliding example (round 0's wording), and round 0's tables in the PR body. |
-| 2 | docs/superpowers/plans/2026-10-12-marketplace-calibration-slice-2-tuning.md | feat/marketplace-calibration-slice-2-tuning | feat/marketplace-calibration-slice-1-measurement | todo | the tuning and the outcome — the bounded loop (rounds 1 to at most 5, slice 1's round 0 as the baseline), one commit per round with its report, the round table, the prompt that ships (the passing round's, or round 0's), and the `CONTEXT.md` sentence. |
+| 2 | docs/superpowers/plans/2026-10-12-marketplace-calibration-slice-2-tuning.md | feat/marketplace-calibration-slice-2-tuning | feat/marketplace-calibration-slice-1-measurement | open #19 | the tuning and the outcome — the bounded loop (rounds 1 to at most 5, slice 1's round 0 as the baseline), one commit per round with its report, the round table, the prompt that ships (the passing round's, or round 0's), and the `CONTEXT.md` sentence. |
 
 ## Umbrella PR body
 
