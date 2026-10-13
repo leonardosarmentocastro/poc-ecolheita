@@ -30,3 +30,5 @@ tuning mean 76.58% (3 runs · 185 rows · margin 0.54 pp)
 | unrelated | 45 | 43/45 (95.6%) | 43/45 (95.6%) | 43/45 (95.6%) |
 
 stability 100/100 (100.0%)
+
+Outcome: round 0 passed the hold-out; its wording ships. The final `--show-holdout` report is in the PR body.
