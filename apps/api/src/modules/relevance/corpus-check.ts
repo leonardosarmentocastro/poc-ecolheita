@@ -66,7 +66,7 @@ export const findUnlabelled = (
     const key = normalizeForEmbedding(name);
     if (seen.has(key)) continue;
     seen.add(key);
-    if (!(key in labels[term])) missing.push(name);
+    if (!Object.hasOwn(labels[term], key)) missing.push(name);
   }
   return missing;
 };

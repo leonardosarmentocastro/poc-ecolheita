@@ -57,6 +57,14 @@ describe("findUnlabelled", () => {
       findUnlabelled("uva", ["Uva Crimson", "UVA  crimson", "Kapo Uva 200ml"], labels),
     ).toEqual(["Kapo Uva 200ml"]);
   });
+
+  it("does not count a name as labelled because it matches an inherited object key", () => {
+    const labels = { ...CORPUS_LABELS, uva: { "uva crimson": "match" as const } };
+    expect(findUnlabelled("uva", ["Constructor", "toString"], labels)).toEqual([
+      "Constructor",
+      "toString",
+    ]);
+  });
 });
 
 describe("distinctCandidates", () => {
