@@ -48,7 +48,8 @@ that contradicts them is a bug. Workflow conventions live in the `AGENTS.md` fil
 - **Classifier** — TypeSafe Jev, model pinned to `jev-1.13.0`, decides each product's tier
   when `TYPESAFE_API_KEY` is set: one request per search, one question per distinct name,
   2-second budget, no retries. Without a key, or when Jev fails, search answers untiered.
-  Changing the model or the criteria wording means re-running `pnpm --filter api tiers:eval`.
+  Changing the model or the prompt wording means re-running `pnpm --filter api tiers:eval`,
+  which grades Jev against the marketplace corpus on the hold-out terms.
 - **Zero stock** — a product with `quantity = 0` is never a search result; it is still listed
   on the products page.
 - **A product without a vector never exists** — the repository embeds and writes
