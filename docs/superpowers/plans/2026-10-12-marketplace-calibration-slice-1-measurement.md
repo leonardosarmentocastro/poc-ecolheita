@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Reviewed:** round 1 (2026-10-12).
+**Reviewed:** round 1 (2026-10-12) · round 2 (2026-10-12).
 **Owns:** the measurement — the corpus seed path, the labels and example-collision checks, the `gradeCorpus` grader with its three-run / two-number / per-class / group-split gate, the rewritten `tiers:eval` (with `--show-holdout`, the slow-call re-run and the exit codes), the replacement of the one corpus-colliding example (round 0's wording), and round 0's tables in the PR body.
 
 **Goal:** `pnpm --filter api tiers:eval` seeds the marketplace corpus, runs the whole search three times, and prints agreement, stability, per-class numbers and a PASS / FAIL / INVALID verdict measured on the hold-out terms.
@@ -22,7 +22,8 @@
 - Example check: every criteria example has the shape `"<product>" for "<search>"`; the quoted product, normalised, must not **equal or be contained in** any corpus name or any scenario name, normalised. Failing this also fails the eval before any Jev call. The one colliding example today, `"Pão francês" for "pão"`, becomes `"Pão sírio" for "pão"` in this slice (round 0's only edit). No other prompt wording changes in this slice.
 - Gate constants live in `grade-corpus.ts`, never as flags: `AGREEMENT_FLOOR = 0.8`, `STABILITY_FLOOR = 0.8`, `LATENCY_BUDGET_MS = 1500`, `RUNS = 3`. Verdict (spec § The gate): INVALID when any Jev call failed (exit 2); PASS when not INVALID and on the hold-out group `agreement[1..3] ≥ 0.8`, `stability ≥ 0.8` and worst latency ≤ 1500 ms (exit 0); FAIL otherwise (exit 1). A check failure (unlabelled pair, example collision, missing key) prints `CHECK FAILED` and exits 3.
 - Slow-call rule (spec § A slow call): a result that is FAIL only because of latency (both 80% figures met on the hold-out) is re-run once, automatically, inside the CLI; the second result stands.
-- Output (spec § The eval step 5): tuning terms get a row table each; the hold-out terms get row tables **only** with `--show-holdout`; both groups get the summary (pooled and per class); then the latency line and the verdict. A failed run's column shows `—`.
+- Output (spec § The eval step 5): tuning terms get a row table each; the hold-out terms get row tables **only** with `--show-holdout`; both groups get the summary (pooled and per class, as `right/rows (xx.x%)`, never whole percents) and a `<group> mean xx.xx% (3 runs · N rows · margin m.mm pp)` line computed from the raw fractions; then the latency line and the verdict. A failed run's column shows `—`.
+- The shortlist is computed once per term and its candidates reused across the three runs: the shortlist is deterministic (fixture order, id tie-break, in-process model), so this equals the spec's "for each run: shortlist(term) → one Jev call" and saves nothing but time.
 - Tuning terms `banana`, `pão`, `frango`, `carne`; hold-out `uva`, `papel higiênico` (`TUNING_TERMS`, `HOLDOUT_TERMS` in the fixture).
 - Jev request unchanged: `createJevClassifier({ apiKey })`, model `jev-1.13.0`, 2000 ms timeout, no retries (slice 3 of the previous feature).
 - The key is never logged. `tiers:eval` needs `TYPESAFE_API_KEY` in `apps/api/.env`; the worktree's copy comes from the main checkout.
@@ -45,7 +46,7 @@
 
 **Files:**
 - Modify: `apps/api/src/db/seed.ts`
-- Test: `apps/api/src/modules/products/__tests__/marketplace-corpus.api.test.ts`
+- Test: `apps/api/src/modules/products/__tests__/search-products-corpus.api.test.ts`
 
 **Interfaces:**
 - Consumes: `CORPUS`, `SITE_SHOP_NAME` from `@/modules/products/fixtures/marketplace-corpus`; `productsRepository.create`.
@@ -54,7 +55,7 @@
 - [ ] **Step 1: Write the failing HTTP test**
 
 ```ts
-// apps/api/src/modules/products/__tests__/marketplace-corpus.api.test.ts
+// apps/api/src/modules/products/__tests__/search-products-corpus.api.test.ts
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Server } from "node:http";
 import { startServer, stopServer } from "@test/helpers";
@@ -105,7 +106,7 @@ describe("the marketplace corpus, seeded", () => {
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `cd apps/api && pnpm exec vitest run src/modules/products/__tests__/marketplace-corpus.api.test.ts`
+Run: `cd apps/api && pnpm exec vitest run src/modules/products/__tests__/search-products-corpus.api.test.ts`
 Expected: FAIL — `seedMarketplaceCorpus` is not exported from `@/db/seed`.
 
 - [ ] **Step 3: Add the seed**
@@ -134,13 +135,13 @@ export const seedMarketplaceCorpus = async (): Promise<void> => {
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `cd apps/api && pnpm exec vitest run src/modules/products/__tests__/marketplace-corpus.api.test.ts`
+Run: `cd apps/api && pnpm exec vitest run src/modules/products/__tests__/search-products-corpus.api.test.ts`
 Expected: PASS (2 tests). Seeding 222 rows embeds 222 names; expect 10–30 s.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add apps/api/src/db/seed.ts apps/api/src/modules/products/__tests__/marketplace-corpus.api.test.ts
+git add apps/api/src/db/seed.ts apps/api/src/modules/products/__tests__/search-products-corpus.api.test.ts
 git commit -m "feat(api): seed the marketplace corpus through the repository
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
@@ -339,7 +340,7 @@ export * from "@/modules/relevance/corpus-check";
 - [ ] **Step 4: Run the tests; expect one failure left**
 
 Run: `cd apps/api && pnpm exec vitest run src/modules/relevance/__tests__/corpus-check.test.ts`
-Expected: 7 pass, 1 FAIL — "the current criteria collide with nothing": `"Pão francês" for "pão"` hits two corpus names (verified 2026-10-12: it is the only collision among the 12 examples and 236 protected names; `"Manteiga com sal"` does not collide). This failure is the point: it is round 0's only edit.
+Expected: 8 pass, 1 FAIL — "the current criteria collide with nothing": `"Pão francês" for "pão"` hits two corpus names (verified 2026-10-12: it is the only collision among the 12 examples and 236 protected names; `"Manteiga com sal"` does not collide). This failure is the point: it is round 0's only edit.
 
 - [ ] **Step 5: Replace the colliding example**
 
@@ -360,7 +361,7 @@ Nothing else in the file changes.
 - [ ] **Step 6: Run the tests; all pass**
 
 Run: `cd apps/api && pnpm exec vitest run src/modules/relevance/__tests__/corpus-check.test.ts`
-Expected: PASS (8 tests).
+Expected: PASS (9 tests).
 
 - [ ] **Step 7: Retire the old scenario-only example test**
 
@@ -682,7 +683,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ### Task 4: The drift check — every shortlist pair has a label
 
 **Files:**
-- Test: `apps/api/src/modules/products/__tests__/marketplace-corpus.repository.test.ts`
+- Test: `apps/api/src/modules/products/__tests__/search-products-corpus.repository.test.ts`
 
 **Interfaces:**
 - Consumes: `seedMarketplaceCorpus`, `productsRepository.shortlist`, `findUnlabelled`, `CORPUS_LABELS`, `CORPUS_PAGES`.
@@ -691,7 +692,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - [ ] **Step 1: Write the test**
 
 ```ts
-// apps/api/src/modules/products/__tests__/marketplace-corpus.repository.test.ts
+// apps/api/src/modules/products/__tests__/search-products-corpus.repository.test.ts
 import { beforeEach, describe, expect, it } from "vitest";
 import { seedMarketplaceCorpus } from "@/db/seed";
 import { normalizeForEmbedding } from "@/modules/embeddings";
@@ -735,17 +736,17 @@ describe("the marketplace corpus labels cover every shortlist pair", () => {
 });
 ```
 
-Seeding 222 rows takes 10–30 s; eight seeds is acceptable for a suite that already loads a model. If it is too slow on CI, collapse the `it.each` into one `it` that loops over `TERMS`, keeping every assertion.
+Seeding 222 rows takes 10–30 s; eight seeds is acceptable for a suite that already loads a model. If it is too slow on CI, collapse the `it.each` into one `it` that loops over `TERMS`, keeping every assertion. If the carne cardinality assertion ever flakes (it depends on both duplicate offers reaching the 50-row shortlist), keep its `findUnlabelled` assertion and drop the cardinality one; never edit the fixture for a test.
 
 - [ ] **Step 2: Run it to verify it passes against the approved fixture**
 
-Run: `cd apps/api && pnpm exec vitest run src/modules/products/__tests__/marketplace-corpus.repository.test.ts`
+Run: `cd apps/api && pnpm exec vitest run src/modules/products/__tests__/search-products-corpus.repository.test.ts`
 Expected: PASS (8 tests). If any term reports unlabelled names, the fixture and the shortlist have drifted since the labelling run of 2026-10-12: **stop and report the names to the human**; do not add labels.
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add apps/api/src/modules/products/__tests__/marketplace-corpus.repository.test.ts
+git add apps/api/src/modules/products/__tests__/search-products-corpus.repository.test.ts
 git commit -m "test(api): every corpus shortlist pair has an approved label
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
@@ -806,7 +807,11 @@ describe("renderCorpusReport", () => {
     const out = renderCorpusReport(rows, gradeCorpus(rows, [300]), { showHoldout: false });
     expect(out).toContain("## tuning (2 rows)");
     expect(out).toContain("## hold-out (2 rows)");
-    expect(out).toMatch(/\| match \| 2 \| 100% \| 50% \| 50% \|/); // hold-out, class match
+    expect(out).toContain("| pooled | 2 | 2/2 (100.0%) | 1/2 (50.0%) | 1/2 (50.0%) |"); // hold-out
+    expect(out).toContain("| match | 2 | 2/2 (100.0%) | 1/2 (50.0%) | 1/2 (50.0%) |"); // hold-out, class match
+    expect(out).toContain("stability 1/2 (50.0%)");
+    expect(out).toContain("tuning mean 100.00% (3 runs · 2 rows · margin 50.00 pp)");
+    expect(out).toContain("hold-out mean 66.67% (3 runs · 2 rows · margin 50.00 pp)");
     expect(out).toContain("worst latency 300 ms (budget 1500)");
     expect(out).toContain("INVALID");
   });
@@ -835,7 +840,6 @@ import {
 } from "@/modules/relevance/grade-corpus";
 import type { Tier } from "@/modules/relevance/types";
 
-const pct = (f: number) => `${Math.round(f * 100)}%`;
 const cell = (t: Tier | null) => t ?? "—";
 
 const rowTable = (term: CorpusTerm, rows: CorpusEvalRow[]): string =>
@@ -852,18 +856,27 @@ const rowTable = (term: CorpusTerm, rows: CorpusEvalRow[]): string =>
     "",
   ].join("\n");
 
-const summaryTable = (title: string, g: GroupSummary): string =>
-  [
+/** "152/185 (82.2%)": the count is exact, the percent is one decimal; never whole percents here. */
+const count = (f: number, rows: number) => `${Math.round(f * rows)}/${rows} (${(f * 100).toFixed(1)}%)`;
+
+const summaryTable = (title: string, g: GroupSummary): string => {
+  const mean = (g.agreement[0] + g.agreement[1] + g.agreement[2]) / 3;
+  const marginPp = g.rows === 0 ? 0 : 100 / g.rows;
+  return [
     `## ${title} (${g.rows} rows)`,
     "| class | rows | run 1 | run 2 | run 3 |",
     "|---|---|---|---|---|",
-    `| pooled | ${g.rows} | ${g.agreement.map(pct).join(" | ")} |`,
-    ...(["match", "related", "unrelated"] as const).map(
-      (tier) => `| ${tier} | ${g.byClass[tier].rows} | ${g.byClass[tier].agreement.map(pct).join(" | ")} |`,
-    ),
-    `stability ${pct(g.stability)}`,
+    `| pooled | ${g.rows} | ${g.agreement.map((a) => count(a, g.rows)).join(" | ")} |`,
+    ...(["match", "related", "unrelated"] as const).map((tier) => {
+      const c = g.byClass[tier];
+      return `| ${tier} | ${c.rows} | ${c.agreement.map((a) => count(a, c.rows)).join(" | ")} |`;
+    }),
+    `stability ${count(g.stability, g.rows)}`,
+    // Slice 2's stop rule reads this line: the mean from the raw fractions, the margin = 1/N.
+    `${title} mean ${(mean * 100).toFixed(2)}% (3 runs · ${g.rows} rows · margin ${marginPp.toFixed(2)} pp)`,
     "",
   ].join("\n");
+};
 
 /** Everything below this line is hold-out row tables; a committed round file stops above it. */
 export const HOLDOUT_MARKER = "<!-- hold-out rows -->";
@@ -896,7 +909,7 @@ export const renderCorpusReport = (
 - [ ] **Step 4: Run the printer test to verify it passes**
 
 Run: `cd apps/api && pnpm exec vitest run src/modules/relevance/__tests__/print-corpus-grade.test.ts`
-Expected: PASS (3 tests). If the per-class regex misses because of column spacing, align the test to the exact line the printer emits for `| match | 2 | 100% | 50% | 50% |`; the content, not the spacing, is the contract.
+Expected: PASS (3 tests). The pooled, per-class, stability and `<group> mean` lines are a contract: slice 2 reads `tuning mean` and the margin from the mean line, never from rounded percents.
 
 - [ ] **Step 5: Rewrite the CLI**
 

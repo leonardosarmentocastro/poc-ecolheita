@@ -254,7 +254,8 @@ of re-runs (18 calls each, a fraction of a cent) is accepted, an unreachable Jev
 
 **A slow call.** A round whose hold-out meets both 80% figures but whose slowest call
 exceeded 1500 ms (the adapter's own timeout is 2000 ms, so the call did succeed) is
-**re-run once**, like INVALID; it is FAIL only if the second run misses the budget too.
+**re-run once**, like INVALID; the second run's result replaces the first in full, whatever it
+is (PASS, a FAIL on the floors, a FAIL on latency again, or INVALID).
 Latency is Jev's, not the prompt's, and a single slow call must not be read as a worse prompt.
 
 ### The gate
@@ -420,6 +421,8 @@ the tuning stalls, and a reviewer should see round 0 before any rewording.
 
 ## Decisions and declined alternatives
 
+- **Bubbled up from plan review (round 2)** — the slow-call re-run's result replaces the
+  first in full; "FAIL only if the second misses the budget too" was one case of that.
 - **Bubbled up from plan review (round 1)** — a failed pre-flight check (example collision,
   unlabelled pair, missing key) is a fourth outcome, `CHECK FAILED`, exit 3: neither a verdict
   nor a round. The gate's 0 / 1 / 2 stay as they were.

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Reviewed:** round 1 (2026-10-12).
+**Reviewed:** round 1 (2026-10-12) · round 2 (2026-10-12).
 **Owns:** the tuning and the outcome — the bounded loop (rounds 1 to at most 5, slice 1's round 0 as the baseline), one commit per round with its report, the round table, the prompt that ships (the passing round's, or round 0's), and the `CONTEXT.md` sentence.
 
 **Goal:** Jev's prompt is reworded, round by round, on the four tuning searches until the two hold-out searches pass the 80% gate, or the loop stops; whichever happens, the PR shows every round's numbers and ships either the passing wording or round 0's.
@@ -20,7 +20,7 @@
 - **Examples.** Every example keeps the shape `"<product>" for "<search>"`. Its product must not equal or sit inside any corpus or scenario name (the eval's check exits 3 otherwise; `corpus-check.test.ts` fails too). Examples may use any grocery name outside the corpus.
 - **Never `--show-holdout` in a round.** The loop runs `pnpm --filter api tiers:eval` with no flag. The hold-out is read only through the two summary tables. The flag is used exactly once, after the loop has stopped, and that output is pasted into the PR body, not committed.
 - **Baseline.** Round 0 is slice 1's `apps/api/test/marketplace/rounds/round-0.md` and the wording merged by slice 1. It is not re-run.
-- **Tuning mean** = (run 1 + run 2 + run 3 pooled agreement of the tuning group) ÷ 3, read from the `## tuning` summary's `pooled` line. **Margin** = 1 ÷ tuning rows (the `## tuning (N rows)` heading; with today's corpus N is about 185, so the margin is about 0.54 percentage points). A round **improves** only if its tuning mean exceeds the best previous round's by more than the margin.
+- **Tuning mean** and **margin** are read, never recomputed, from the report's line `tuning mean xx.xx% (3 runs · N rows · margin m.mm pp)`, which slice 1's printer computes from the raw fractions (the pooled percentages above it are one-decimal and are not the input). With today's corpus N = 185 (50 + 49 + 44 + 42 labelled pairs), so the margin is 0.54 pp. A round **improves** only if its tuning mean exceeds the best previous round's by more than the margin.
 - **Stop rules**, checked after every round, in this order: (1) the round's verdict is PASS → stop; (2) the round did not improve → stop; (3) the round number is 5 → stop. The loop never runs a round 6.
 - **INVALID** (exit 2): the round is re-run with the same wording; it does not count as a round. Three INVALID results in a row stop the loop; report the failure kinds to the human in the PR body.
 - **FAIL on latency only** is handled inside the CLI (one automatic re-run); the printed verdict is what counts.
@@ -51,7 +51,7 @@
 
 - [ ] **Step 1: Read round 0**
 
-Open `apps/api/test/marketplace/rounds/round-0.md`. Note, from the `## tuning` section: the row count `N` in the heading and the three pooled percentages; from `## hold-out`: the three pooled percentages and the stability line; and the verdict line. Compute `tuning mean = (a + b + c) / 3` and `margin = 100 / N` percentage points.
+Open `apps/api/test/marketplace/rounds/round-0.md`. Copy, from the `## tuning` section, the `tuning mean xx.xx% (3 runs · N rows · margin m.mm pp)` line: the mean and the margin come from it verbatim. From `## hold-out`: the three pooled `right/rows (xx.x%)` cells and the stability line. And the verdict line. Nothing is recomputed by hand.
 
 - [ ] **Step 2: Write the round table**
 
@@ -111,7 +111,7 @@ If the `state` or `instructions` template changed, update the matching exact-str
 Run: `cd apps/api && pnpm exec vitest run src/modules/relevance && pnpm typecheck && pnpm lint`
 Expected: PASS and clean. The example-collision test in `corpus-check.test.ts` runs here; a collision fails now, before any Jev call.
 
-Then check the prose for protected names by hand, since the check covers examples only:
+Then read the prose you changed (`what`, `not_for`, `state`, `instructions`) and confirm it describes kinds ("a cooked or shredded form of it") and names no product that is in the corpus or the scenario. This is a rule applied by reading; the enforced check covers examples only. The smoke test below catches only a whole listing title pasted into the prose, nothing subtler:
 
 Run: `cd apps/api && pnpm exec tsx -e 'import { PROTECTED_NAMES } from "./src/modules/relevance/corpus-check.ts"; import { TIER_CRITERIA } from "./src/modules/relevance/criteria.ts"; const prose = Object.values(TIER_CRITERIA).flatMap(c => [c.what, c.not_for ?? ""]).join(" ").toLowerCase(); console.log(PROTECTED_NAMES.filter(n => prose.includes(n.toLowerCase())))'`
 Expected: `[]`. (If the `@/` alias is needed, run it as a one-off file under `src/db/` and delete it before committing.)
